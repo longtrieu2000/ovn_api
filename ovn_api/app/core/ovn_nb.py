@@ -10,7 +10,6 @@ from .ovsdb import OvsdbIdlClient
 NB_TABLES = (
     "ACL",
     "Load_Balancer",
-    "Logical_Flow",
     "Logical_Router",
     "Logical_Router_Port",
     "Logical_Switch",

@@ -13,16 +13,17 @@ class MetricsService:
         self.sb_client = get_ovn_sb_client()
 
     def get_capacity_metrics(self) -> CapacityMetrics:
-        idl = self.nb_client.get_idl()
+        nb_idl = self.nb_client.get_idl()
+        sb_idl = self.sb_client.get_idl()
         return CapacityMetrics(
-            logical_flow_count=len(idl.tables["Logical_Flow"].rows),
-            logical_switch_count=len(idl.tables["Logical_Switch"].rows),
-            logical_switch_port_count=len(idl.tables["Logical_Switch_Port"].rows),
-            logical_router_count=len(idl.tables["Logical_Router"].rows),
-            logical_router_port_count=len(idl.tables["Logical_Router_Port"].rows),
-            acl_count=len(idl.tables["ACL"].rows),
-            nat_count=len(idl.tables["NAT"].rows),
-            load_balancer_count=len(idl.tables["Load_Balancer"].rows),
+            logical_flow_count=len(sb_idl.tables["Logical_Flow"].rows),
+            logical_switch_count=len(nb_idl.tables["Logical_Switch"].rows),
+            logical_switch_port_count=len(nb_idl.tables["Logical_Switch_Port"].rows),
+            logical_router_count=len(nb_idl.tables["Logical_Router"].rows),
+            logical_router_port_count=len(nb_idl.tables["Logical_Router_Port"].rows),
+            acl_count=len(nb_idl.tables["ACL"].rows),
+            nat_count=len(nb_idl.tables["NAT"].rows),
+            load_balancer_count=len(nb_idl.tables["Load_Balancer"].rows),
         )
 
     def get_latency_metrics(self) -> LatencyMetrics:

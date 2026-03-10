@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ..core.ovn_nb import get_ovn_nb_client
+from ..core.ovn_sb import get_ovn_sb_client
 from ..core.ovs import get_ovs_command_client
 from ..models.flow import LogicalFlow, OpenFlowDump
 
@@ -17,10 +18,11 @@ def _row_uuid(value: object) -> str | None:
 class FlowService:
     def __init__(self) -> None:
         self.nb_client = get_ovn_nb_client()
+        self.sb_client = get_ovn_sb_client()
         self.ovs_client = get_ovs_command_client()
 
     def list_logical_flows(self, table_id: int | None = None) -> list[LogicalFlow]:
-        idl = self.nb_client.get_idl()
+        idl = self.sb_client.get_idl()
         flows: list[LogicalFlow] = []
         for row in idl.tables["Logical_Flow"].rows.values():
             row_table_id = getattr(row, "table_id", None)
