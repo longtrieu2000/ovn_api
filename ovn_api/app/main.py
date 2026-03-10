@@ -27,7 +27,18 @@ def _build_schema_helper() -> idl.SchemaHelper:
             ),
         )
 
-    helper = idl.SchemaHelper(location=OVN_NB_SCHEMA)
+    try:
+        helper = idl.SchemaHelper(location=OVN_NB_SCHEMA)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to load OVN NB schema file. "
+                f"OVN_NB_SCHEMA={OVN_NB_SCHEMA!r}. "
+                f"exc_type={type(exc).__name__}. "
+                f"exc={exc!r}"
+            ),
+        ) from exc
 
     helper.register_table("Logical_Flow")
     return helper
@@ -40,7 +51,18 @@ def _get_idl() -> idl.Idl:
     development and testing.
     """
     schema_helper = _build_schema_helper()
-    return idl.Idl(OVN_NB_DB, schema_helper)
+    try:
+        return idl.Idl(OVN_NB_DB, schema_helper)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to initialize OVN NB IDL. "
+                f"OVN_NB_DB={OVN_NB_DB!r}. "
+                f"exc_type={type(exc).__name__}. "
+                f"exc={exc!r}"
+            ),
+        ) from exc
 
 
 app = FastAPI(title="OVN Dev API", version="0.1.0")
@@ -58,7 +80,14 @@ def get_logical_flows() -> List[Dict[str, Any]]:
     except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover - connection failure
-        raise HTTPException(status_code=500, detail=f"Failed to connect to OVN NB DB: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to connect to OVN NB DB. "
+                f"exc_type={type(exc).__name__}. "
+                f"exc={exc!r}"
+            ),
+        ) from exc
 
     # Run one poll/transaction to populate the IDL.
     start = time.monotonic()
