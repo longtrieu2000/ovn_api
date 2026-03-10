@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from ..config import get_settings
+from .command import CommandExecutor
 from .ovsdb import OvsdbIdlClient
 
 
@@ -27,4 +28,9 @@ def get_ovn_nb_client() -> OvsdbIdlClient:
         tables=NB_TABLES,
         sync_timeout_s=settings.ovn_idl_sync_timeout_s,
         label="OVN Northbound",
+        schema_container=settings.ovn_nb_container,
+        executor=CommandExecutor(
+            transport=settings.command_transport,
+            docker_bin=settings.docker_bin,
+        ),
     )

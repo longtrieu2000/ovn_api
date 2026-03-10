@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from threading import Lock
@@ -7,6 +8,8 @@ from typing import Iterable
 
 from fastapi import HTTPException
 from ovs.db.idl import Idl, SchemaHelper
+
+from .command import CommandExecutor
 
 
 class OvsdbIdlClient:
@@ -18,12 +21,16 @@ class OvsdbIdlClient:
         tables: Iterable[str],
         sync_timeout_s: float,
         label: str,
+        schema_container: str | None = None,
+        executor: CommandExecutor | None = None,
     ) -> None:
         self.remote = remote
         self.schema_path = schema_path
         self.tables = tuple(tables)
         self.sync_timeout_s = sync_timeout_s
         self.label = label
+        self.schema_container = schema_container
+        self.executor = executor
         self._idl: Idl | None = None
         self._lock = Lock()
 
@@ -35,17 +42,8 @@ class OvsdbIdlClient:
             return self._idl
 
     def _create_idl(self) -> Idl:
-        if not os.path.exists(self.schema_path):
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    f"{self.label} schema file not found at {self.schema_path!r}. "
-                    "Set the schema path via environment or mount the matching OVN schema."
-                ),
-            )
-
         try:
-            helper = SchemaHelper(location=self.schema_path)
+            helper = self._build_schema_helper()
             for table in self.tables:
                 helper.register_table(table)
             return Idl(self.remote, helper)
@@ -60,6 +58,36 @@ class OvsdbIdlClient:
                     f"exc_type={type(exc).__name__} exc={exc!r}"
                 ),
             ) from exc
+
+    def _build_schema_helper(self) -> SchemaHelper:
+        if os.path.exists(self.schema_path):
+            return SchemaHelper(location=self.schema_path)
+
+        if self.executor is not None and self.schema_container is not None:
+            result = self.executor.run(
+                ["cat", self.schema_path],
+                container=self.schema_container,
+            )
+            try:
+                schema_json = json.loads(result.stdout)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"Failed to parse {self.label} schema from container "
+                        f"{self.schema_container!r} at {self.schema_path!r}: {exc}"
+                    ),
+                ) from exc
+            return SchemaHelper(schema_json=schema_json)
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"{self.label} schema file not found at {self.schema_path!r}. "
+                "If OVN runs in Docker, set OVN_COMMAND_TRANSPORT=docker-exec and "
+                "configure the matching OVN_*_CONTAINER environment variable."
+            ),
+        )
 
     def _sync(self) -> None:
         if self._idl is None:
