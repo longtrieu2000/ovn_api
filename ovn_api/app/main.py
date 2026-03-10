@@ -6,12 +6,12 @@ import time
 
 from fastapi import FastAPI, HTTPException
 
-from ovs.db import idl
+from ovs.db.idl import Idl, SchemaHelper
 OVN_NB_DB = os.getenv("OVN_NB_DB", "tcp:127.0.0.1:6641")
 OVN_NB_SCHEMA = os.getenv("OVN_NB_SCHEMA", "/usr/share/ovn/ovn-nb.ovsschema")
 
 
-def _build_schema_helper() -> idl.SchemaHelper:
+def _build_schema_helper() -> SchemaHelper:
     """Build a SchemaHelper for OVN Northbound.
 
     This dev API expects the OVN Northbound schema to exist as a local file.
@@ -28,7 +28,7 @@ def _build_schema_helper() -> idl.SchemaHelper:
         )
 
     try:
-        helper = idl.SchemaHelper(location=OVN_NB_SCHEMA)
+        helper = SchemaHelper(location=OVN_NB_SCHEMA)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -44,7 +44,7 @@ def _build_schema_helper() -> idl.SchemaHelper:
     return helper
 
 
-def _get_idl() -> idl.Idl:
+def _get_idl() -> Idl:
     """Create a simple IDL connection to the OVN Northbound DB.
 
     This is intentionally minimal and not pooled; good enough for
@@ -52,7 +52,7 @@ def _get_idl() -> idl.Idl:
     """
     schema_helper = _build_schema_helper()
     try:
-        return idl.Idl(OVN_NB_DB, schema_helper)
+        return Idl(OVN_NB_DB, schema_helper)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
