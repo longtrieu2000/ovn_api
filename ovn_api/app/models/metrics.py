@@ -14,6 +14,15 @@ class CapacityMetrics(BaseModel):
     load_balancer_count: int
 
 
+class DatapathMetrics(BaseModel):
+    datapath_flows: int
+    lookups_hit: int
+    lookups_missed: int
+    lookups_lost: int
+    cache_hit_rate: float | None = None
+    mask_hit_per_pkt: float | None = None
+
+
 class LatencyMetrics(BaseModel):
     nb_query_latency_ms: float
     sb_query_latency_ms: float

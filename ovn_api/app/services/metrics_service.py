@@ -4,13 +4,15 @@ import time
 
 from ..core.ovn_nb import get_ovn_nb_client
 from ..core.ovn_sb import get_ovn_sb_client
-from ..models.metrics import CapacityMetrics, LatencyMetrics
+from ..models.metrics import CapacityMetrics, DatapathMetrics, LatencyMetrics
+from .datapath_metrics_collector import get_datapath_metrics_collector
 
 
 class MetricsService:
     def __init__(self) -> None:
         self.nb_client = get_ovn_nb_client()
         self.sb_client = get_ovn_sb_client()
+        self.datapath_collector = get_datapath_metrics_collector()
 
     def get_capacity_metrics(self) -> CapacityMetrics:
         nb_idl = self.nb_client.get_idl()
@@ -25,6 +27,9 @@ class MetricsService:
             nat_count=len(nb_idl.tables["NAT"].rows),
             load_balancer_count=len(nb_idl.tables["Load_Balancer"].rows),
         )
+
+    def get_datapath_metrics(self) -> DatapathMetrics:
+        return self.datapath_collector.get_snapshot()
 
     def get_latency_metrics(self) -> LatencyMetrics:
         nb_start = time.perf_counter()

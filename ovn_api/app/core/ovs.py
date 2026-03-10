@@ -10,13 +10,22 @@ class OvsCommandClient:
     def __init__(
         self,
         *,
+        ovs_appctl_bin: str,
         ovs_ofctl_bin: str,
         ovs_vswitchd_container: str,
         executor: CommandExecutor,
     ) -> None:
+        self.ovs_appctl_bin = ovs_appctl_bin
         self.ovs_ofctl_bin = ovs_ofctl_bin
         self.ovs_vswitchd_container = ovs_vswitchd_container
         self.executor = executor
+
+    def show_dpctl(self) -> str:
+        result = self.executor.run(
+            [self.ovs_appctl_bin, "dpctl/show"],
+            container=self.ovs_vswitchd_container,
+        )
+        return result.stdout
 
     def dump_openflow_flows(self, bridge: str) -> str:
         result = self.executor.run(
@@ -30,6 +39,7 @@ class OvsCommandClient:
 def get_ovs_command_client() -> OvsCommandClient:
     settings = get_settings()
     return OvsCommandClient(
+        ovs_appctl_bin=settings.ovs_appctl_bin,
         ovs_ofctl_bin=settings.ovs_ofctl_bin,
         ovs_vswitchd_container=settings.ovs_vswitchd_container,
         executor=CommandExecutor(

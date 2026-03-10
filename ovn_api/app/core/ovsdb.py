@@ -1,36 +1,32 @@
 from __future__ import annotations
 
-import json
 import os
 import time
+import errno
 from threading import Lock
 from typing import Iterable
 
 from fastapi import HTTPException
 from ovs.db.idl import Idl, SchemaHelper
-
-from .command import CommandExecutor
-
+from ovs import jsonrpc, stream
 
 class OvsdbIdlClient:
     def __init__(
         self,
         *,
         remote: str,
+        schema_db_name: str,
         schema_path: str,
         tables: Iterable[str],
         sync_timeout_s: float,
         label: str,
-        schema_container: str | None = None,
-        executor: CommandExecutor | None = None,
     ) -> None:
         self.remote = remote
+        self.schema_db_name = schema_db_name
         self.schema_path = schema_path
         self.tables = tuple(tables)
         self.sync_timeout_s = sync_timeout_s
         self.label = label
-        self.schema_container = schema_container
-        self.executor = executor
         self._idl: Idl | None = None
         self._lock = Lock()
 
@@ -63,31 +59,92 @@ class OvsdbIdlClient:
         if os.path.exists(self.schema_path):
             return SchemaHelper(location=self.schema_path)
 
-        if self.executor is not None and self.schema_container is not None:
-            result = self.executor.run(
-                ["cat", self.schema_path],
-                container=self.schema_container,
-            )
-            try:
-                schema_json = json.loads(result.stdout)
-            except json.JSONDecodeError as exc:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Failed to parse {self.label} schema from container "
-                        f"{self.schema_container!r} at {self.schema_path!r}: {exc}"
-                    ),
-                ) from exc
-            return SchemaHelper(schema_json=schema_json)
+        try:
+            schema_json = self._fetch_schema_via_rpc()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Failed to fetch {self.label} schema via OVSDB RPC. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r} "
+                    f"exc_type={type(exc).__name__} exc={exc!r}"
+                ),
+            ) from exc
 
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"{self.label} schema file not found at {self.schema_path!r}. "
-                "If OVN runs in Docker, set OVN_COMMAND_TRANSPORT=docker-exec and "
-                "configure the matching OVN_*_CONTAINER environment variable."
-            ),
-        )
+        try:
+            return SchemaHelper(schema_json=schema_json)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Failed to build SchemaHelper for {self.label} from OVSDB RPC result. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r} "
+                    f"exc_type={type(exc).__name__} exc={exc!r}"
+                ),
+            ) from exc
+
+    def _fetch_schema_via_rpc(self) -> dict:
+        timeout_ms = int(self.sync_timeout_s * 1000)
+        error, rpc_stream = stream.Stream.open_block(stream.Stream.open(self.remote), timeout=timeout_ms)
+        if error or rpc_stream is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Failed to open JSON-RPC stream to {self.label} at {self.remote!r}: "
+                    f"{os.strerror(error) if error else 'unknown error'}"
+                ),
+            )
+
+        rpc = jsonrpc.Connection(rpc_stream)
+        try:
+            request = jsonrpc.Message.create_request("get_schema", [self.schema_db_name])
+            error, reply = rpc.transact_block(request)
+        finally:
+            rpc.close()
+
+        if error:
+            if error == errno.EOF:
+                error_text = "connection closed"
+            else:
+                error_text = os.strerror(error)
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"OVSDB RPC get_schema failed for {self.label}. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r} error={error_text}"
+                ),
+            )
+
+        if reply is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"OVSDB RPC get_schema returned no reply for {self.label}. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r}"
+                ),
+            )
+
+        if reply.type == jsonrpc.Message.T_ERROR:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"OVSDB RPC get_schema returned error for {self.label}. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r} error={reply.error!r}"
+                ),
+            )
+
+        if not isinstance(reply.result, dict):
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"OVSDB RPC get_schema returned unexpected result for {self.label}. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r}"
+                ),
+            )
+
+        return reply.result
 
     def _sync(self) -> None:
         if self._idl is None:
