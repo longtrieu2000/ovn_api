@@ -49,6 +49,11 @@ NAT_STAGE_NAMES = frozenset(
 def _row_uuid(value: object) -> str | None:
     if value is None:
         return None
+    if isinstance(value, (list, tuple, set, frozenset)):
+        if not value:
+            return None
+        first_item = next(iter(value))
+        return _row_uuid(first_item)
     uuid_value = getattr(value, "uuid", None)
     if uuid_value is not None:
         return str(uuid_value)
