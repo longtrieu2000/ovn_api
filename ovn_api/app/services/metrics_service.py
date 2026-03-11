@@ -127,7 +127,7 @@ class MetricsService:
                 measurement_mode="requires_active_probe",
                 reason=(
                     "Passive flow dump cannot infer time from NB commit to OVS flow installation. "
-                    "Implement a canary resource trace to measure this dimension accurately."
+                    "Use POST /api/v1/traces/canary for an active canary trace."
                 ),
             ),
         )

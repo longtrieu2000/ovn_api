@@ -20,6 +20,7 @@ app/main.py
         +--> routers/topology.py
         +--> routers/chassis.py
         +--> routers/metrics.py
+        +--> routers/traces.py
                 |
                 v
             services/*
@@ -84,6 +85,23 @@ app/main.py
                             +--> app/core/ovs.py
                                     |
                                     +--> app/core/command.py
+    |
+    +--> app/routers/traces.py
+            |
+            +--> app/services/trace_service.py
+            +--> app/services/trace_manager.py
+            +--> app/services/trace_store.py
+                    |
+                    +--> SQL trace store (SQLite/PostgreSQL)
+                    +--> queue in-memory
+                    +--> worker thread
+                    |
+                    +--> app/services/trace_service.py
+                            |
+                    +--> app/core/ovn_nb.py
+                    +--> app/core/ovn_sb.py
+                    +--> app/core/ovn_nbctl.py
+                    +--> app/core/ovs.py
 ```
 
 ## 3. Luong Request Mau
@@ -169,6 +187,42 @@ curl
  -> JSON response
 ```
 
+### 3.4 Khi goi `POST /api/v1/traces/canary`
+
+```text
+curl
+ -> routers/traces.py
+ -> services/trace_manager.py
+ -> trace_store.py ghi run sync vao SQL store
+ -> services/trace_service.py
+ -> core/ovn_nbctl.py
+ -> ovn-nbctl tao canary resource trong NB
+ -> core/ovn_nb.py
+ -> core/ovn_sb.py
+ -> poll NB/SB de bat cac moc latency
+ -> core/ovs.py
+ -> ovs-ofctl dump-flows neu resource support OpenFlow trace
+ -> trace_store.py update result vao SQL store
+ -> models/traces.py
+ -> JSON response
+```
+
+### 3.5 Khi goi `POST /api/v1/traces/canary/runs`
+
+```text
+curl
+ -> routers/traces.py
+ -> services/trace_manager.py
+ -> trace_store.py
+ -> SQL store ghi run = queued
+ -> queue in-memory
+ -> worker thread
+ -> services/trace_service.py
+ -> ovn-nbctl / NB / SB / OVS
+ -> ket qua duoc update vao SQL store
+ -> client poll lai `GET /api/v1/traces/canary/runs/{probe_id}`
+```
+
 ## 4. Bang Interface: IDL vs CMD vs Interface Khac
 
 ### 4.1 Bang Theo Tung API / Nguon Du Lieu
@@ -186,6 +240,11 @@ curl
 | `/api/v1/metrics/capacity` | IDL | NB + SB OVSDB | `app/services/metrics_service.py` | Prometheus exporter hoac metrics cache |
 | `/api/v1/metrics/datapath` | Background cache + CMD collector | `ovs-appctl dpctl/show` duoc collector goi dinh ky | `app/services/metrics_service.py`, `app/services/datapath_metrics_collector.py` | OVS telemetry/exporter rieng hoac interface runtime khac |
 | `/api/v1/metrics/latency` | IDL + OVSDB RPC | `BFD` tu SB DB, `OVSDB transact/select` qua NB/SB RPC, `OpenFlow installation` hien de o trang thai `requires_active_probe` | `app/services/metrics_service.py` | canary trace module cho openflow install latency |
+| `/api/v1/traces/capabilities` | Metadata | model + rule mapping noi bo | `app/services/trace_service.py` | co the doi thanh OpenAPI/registry rieng neu trace module lon hon |
+| `POST /api/v1/traces/canary` | SQL store + IDL + CMD + poll | chay sync canary probe va persist request/result vao SQLite/PostgreSQL | `app/services/trace_manager.py`, `app/services/trace_store.py`, `app/services/trace_service.py` | trace manager nen, event stream, Prometheus exporter |
+| `POST /api/v1/traces/canary/runs` | Background queue + SQL store + IDL + CMD + poll | enqueue probe vao worker thread, metadata va ket qua duoc luu trong SQLite/PostgreSQL | `app/services/trace_manager.py`, `app/services/trace_store.py`, `app/services/trace_service.py` | queue ben ngoai, distributed worker |
+| `GET /api/v1/traces/canary/runs` | SQL store | doc danh sach run da enqueue/chay/xong | `app/services/trace_manager.py`, `app/services/trace_store.py` | persistent trace store |
+| `GET /api/v1/traces/canary/runs/{probe_id}` | SQL store | doc trang thai va ket qua cua 1 run | `app/services/trace_manager.py`, `app/services/trace_store.py` | persistent trace store |
 | `/api/v1/flows/openflow` | CMD | `ovs-ofctl dump-flows` | `app/services/flow_service.py`, `app/core/ovs.py` | OVSDB appctl wrapper, OVS Python/runtime API neu can, hoac parser service rieng |
 
 ### 4.2 Bang Theo Thanh Phan Noi Bo
@@ -334,6 +393,14 @@ Day la dinh nghia output JSON. Ban co the hieu don gian: model quy dinh API se t
   - `/api/v1/metrics/datapath`
   - `/api/v1/metrics/latency`
 
+- `app/routers/traces.py`
+  Endpoint:
+  - `GET /api/v1/traces/capabilities`
+  - `POST /api/v1/traces/canary`
+  - `POST /api/v1/traces/canary/runs`
+  - `GET /api/v1/traces/canary/runs`
+  - `GET /api/v1/traces/canary/runs/{probe_id}`
+
 - `app/routers/__init__.py`
   File danh dau package.
 
@@ -361,6 +428,25 @@ Day la dinh nghia output JSON. Ban co the hieu don gian: model quy dinh API se t
   - doc datapath metrics tu background collector
   - do query latency co ban
   - thong ke BFD session
+
+- `app/services/trace_service.py`
+  Xu ly:
+  - tao canary resource bang `ovn-nbctl`
+  - map alias resource (`logical_flow`, `network`, `subnet`, ...)
+  - poll NB, SB, va OpenFlow de do latency tung chang
+  - cleanup canary resource sau khi probe xong
+
+- `app/services/trace_manager.py`
+  Xu ly:
+  - queue run canary probe vao worker nen
+  - luu run state persistent vao SQL trace store (`queued`, `running`, `success`, ...)
+  - cho phep client poll ket qua sau thay vi giu request HTTP mo den luc probe xong
+
+- `app/services/trace_store.py`
+  Xu ly:
+  - persistent trace store bang SQLite/PostgreSQL
+  - serialize request/prepared/result cua canary run
+  - recover stale run dang `queued`/`running` sau khi process restart
 
 - `app/services/datapath_metrics_collector.py`
   Collector nen cho datapath metrics.
@@ -391,6 +477,15 @@ Day la dinh nghia output JSON. Ban co the hieu don gian: model quy dinh API se t
   - CapacityMetrics
   - DatapathMetrics
   - LatencyMetrics
+
+- `app/models/traces.py`
+  Dinh nghia JSON cho:
+  - CanaryProbeRequest
+  - CanaryProbeStage
+  - CanaryProbeResult
+  - CanaryCapabilitiesResponse
+  - CanaryRunSummary
+  - CanaryRunDetail
 
 - `app/models/health.py`
   Dinh nghia JSON cho endpoint `/health`.

@@ -20,8 +20,11 @@ class Settings:
     ovn_nb_container: str
     ovn_sb_container: str
     ovs_vswitchd_container: str
+    ovn_nbctl_bin: str
     ovs_appctl_bin: str
     ovs_ofctl_bin: str
+    trace_store_url: str
+    trace_store_max_runs: int
 
 
 @lru_cache(maxsize=1)
@@ -40,6 +43,9 @@ def get_settings() -> Settings:
         ovn_nb_container=os.getenv("OVN_NB_CONTAINER", "ovn_nb_db"),
         ovn_sb_container=os.getenv("OVN_SB_CONTAINER", "ovn_sb_db"),
         ovs_vswitchd_container=os.getenv("OVS_VSWITCHD_CONTAINER", "openvswitch_vswitchd"),
+        ovn_nbctl_bin=os.getenv("OVN_NBCTL_BIN", "ovn-nbctl"),
         ovs_appctl_bin=os.getenv("OVS_APPCTL_BIN", "ovs-appctl"),
         ovs_ofctl_bin=os.getenv("OVS_OFCTL_BIN", "ovs-ofctl"),
+        trace_store_url=os.getenv("TRACE_STORE_URL", "sqlite:///./ovn_api/data/canary_traces.db"),
+        trace_store_max_runs=int(os.getenv("TRACE_STORE_MAX_RUNS", "500")),
     )

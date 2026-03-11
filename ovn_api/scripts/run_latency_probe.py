@@ -3,235 +3,257 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 
-def _fetch_json(url: str, timeout_s: float) -> dict:
-    with urllib.request.urlopen(url, timeout=timeout_s) as response:
+FINAL_STATUSES = {"success", "partial_success", "timeout", "failed"}
+
+
+def _http_json(
+    method: str,
+    url: str,
+    timeout_s: float,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    body = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(url, method=method, data=body, headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout_s) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _snapshot(api_base: str, timeout_s: float) -> dict:
-    return {
-        "captured_at": datetime.now().isoformat(timespec="seconds"),
-        "latency": _fetch_json(f"{api_base}/api/v1/metrics/latency", timeout_s),
-        "capacity": _fetch_json(f"{api_base}/api/v1/metrics/capacity", timeout_s),
-        "flow_summary": _fetch_json(f"{api_base}/api/v1/flows/logical/summary", timeout_s),
-    }
+def _fetch_capabilities(api_base: str, timeout_s: float) -> dict[str, Any]:
+    response = _http_json("GET", f"{api_base}/api/v1/traces/capabilities", timeout_s)
+    if not isinstance(response, dict):
+        raise RuntimeError("Unexpected capabilities response.")
+    return response
 
 
-def _print_snapshot(label: str, snapshot: dict) -> None:
-    latency = snapshot["latency"]
-    ovsdb = latency["ovsdb"]
-    bfd = latency["bfd"]
-    flow_summary = snapshot["flow_summary"]
-    capacity = snapshot["capacity"]
+def _print_capabilities(capabilities: dict[str, Any]) -> None:
+    print("\nCanary Trace Capabilities")
+    print(f"  sync_endpoint: {capabilities['sync_endpoint']}")
+    print(f"  async_submit_endpoint: {capabilities['async_submit_endpoint']}")
+    print(f"  store_scope: {capabilities['store_scope']}")
+    print("  resources:")
+    for resource in capabilities.get("resources", []):
+        stages = ",".join(resource.get("available_stages", []))
+        openflow = "yes" if resource.get("openflow_supported") else "no"
+        alias = resource.get("alias_for") or "-"
+        print(
+            "   - "
+            f"{resource['requested_resource_type']}"
+            f" -> {resource['resolved_resource_type']}"
+            f" alias={alias}"
+            f" openflow={openflow}"
+            f" stages={stages}"
+        )
 
-    print(f"\n[{label}] {snapshot['captured_at']}")
+
+def _print_stage(stage_name: str, stage: dict[str, Any]) -> None:
+    evidence = stage.get("evidence") or []
+    evidence_preview = evidence[0] if evidence else "-"
     print(
-        "  ovsdb: "
-        f"nb_tx={ovsdb['nb_transaction_latency_ms']}ms "
-        f"sb_tx={ovsdb['sb_transaction_latency_ms']}ms "
-        f"nb_idl={ovsdb['nb_idl_sync_latency_ms']}ms "
-        f"sb_idl={ovsdb['sb_idl_sync_latency_ms']}ms"
+        f"  {stage_name}: "
+        f"status={stage.get('status')} "
+        f"latency_ms={stage.get('latency_ms')} "
+        f"observed_at={stage.get('observed_at')} "
+        f"detail={stage.get('detail')}"
     )
-    print(
-        "  bfd: "
-        f"sessions={bfd['session_count']} "
-        f"up={bfd['up_count']} "
-        f"down={bfd['down_count']} "
-        f"admin_down={bfd['admin_down_count']} "
-        f"init={bfd['init_count']}"
-    )
-    print(
-        "  flows: "
-        f"total={flow_summary['logical_flow_count']} "
-        f"acl={flow_summary['acl_logical_flow_count']} "
-        f"acl_exact={flow_summary['acl_exact_logical_flow_count']} "
-        f"acl_stage={flow_summary['acl_stage_generic_logical_flow_count']} "
-        f"nat={flow_summary['nat_logical_flow_count']} "
-        f"nat_exact={flow_summary['nat_exact_logical_flow_count']} "
-        f"nat_stage={flow_summary['nat_stage_generic_logical_flow_count']} "
-        f"other={flow_summary['other_logical_flow_count']}"
-    )
-    print(
-        "  capacity: "
-        f"switches={capacity['logical_switch_count']} "
-        f"routers={capacity['logical_router_count']} "
-        f"acls={capacity['acl_count']} "
-        f"logical_flows={capacity['logical_flow_count']}"
-    )
-
-    openflow = latency["openflow_installation"]
-    if not openflow["available"]:
-        print(f"  openflow_installation: {openflow['measurement_mode']} ({openflow['reason']})")
+    print(f"    evidence: {evidence_preview}")
 
 
-def _run_ovn_nbctl(
-    docker_bin: str,
-    container: str,
-    args: list[str],
-    *,
-    check: bool = True,
-) -> subprocess.CompletedProcess[str]:
-    command = [docker_bin, "exec", container, "ovn-nbctl", *args]
-    return subprocess.run(command, check=check, capture_output=True, text=True)
+def _print_probe_result(result: dict[str, Any]) -> None:
+    print("\nProbe Result")
+    print(f"  probe_id: {result['probe_id']}")
+    print(f"  status: {result['status']}")
+    print(f"  resource: {result['requested_resource_type']} -> {result['resolved_resource_type']}")
+    print(f"  resource_name: {result['resource_name']}")
+    print(f"  target_name: {result.get('target_name')}")
+    print(f"  openflow_expected: {result['openflow_expected']}")
+    print(f"  command_latency_ms: {result['command_latency_ms']}")
+    print(f"  nb_to_sb_latency_ms: {result.get('nb_to_sb_latency_ms')}")
+    print(f"  sb_to_openflow_latency_ms: {result.get('sb_to_openflow_latency_ms')}")
+    print(f"  total_latency_ms: {result.get('total_latency_ms')}")
+    if result.get("note"):
+        print(f"  note: {result['note']}")
+    _print_stage("nb_committed", result["nb_committed"])
+    _print_stage("sb_realized", result["sb_realized"])
+    _print_stage("openflow_realized", result["openflow_realized"])
+    _print_stage("cleanup", result["cleanup"])
 
 
-def _probe_step(
-    step_name: str,
-    action_args: list[str],
-    *,
+def _submit_sync_probe(api_base: str, timeout_s: float, payload: dict[str, Any]) -> dict[str, Any]:
+    response = _http_json("POST", f"{api_base}/api/v1/traces/canary", timeout_s, payload)
+    if not isinstance(response, dict):
+        raise RuntimeError("Unexpected sync probe response.")
+    return response
+
+
+def _submit_async_probe(api_base: str, timeout_s: float, payload: dict[str, Any]) -> dict[str, Any]:
+    response = _http_json("POST", f"{api_base}/api/v1/traces/canary/runs", timeout_s, payload)
+    if not isinstance(response, dict):
+        raise RuntimeError("Unexpected async submit response.")
+    return response
+
+
+def _get_run(api_base: str, timeout_s: float, probe_id: str) -> dict[str, Any]:
+    response = _http_json("GET", f"{api_base}/api/v1/traces/canary/runs/{probe_id}", timeout_s)
+    if not isinstance(response, dict):
+        raise RuntimeError("Unexpected run detail response.")
+    return response
+
+
+def _list_runs(api_base: str, timeout_s: float, limit: int) -> list[dict[str, Any]]:
+    response = _http_json("GET", f"{api_base}/api/v1/traces/canary/runs?limit={limit}", timeout_s)
+    if not isinstance(response, list):
+        raise RuntimeError("Unexpected run list response.")
+    return response
+
+
+def _poll_async_run(
     api_base: str,
     timeout_s: float,
-    docker_bin: str,
-    nb_container: str,
-    sample_count: int,
-    sample_interval_s: float,
-    results: list[dict],
-) -> None:
-    started_at = time.perf_counter()
-    result = _run_ovn_nbctl(docker_bin, nb_container, action_args)
-    action_latency_ms = round((time.perf_counter() - started_at) * 1000, 3)
+    probe_id: str,
+    wait_timeout_s: float,
+    poll_interval_s: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + wait_timeout_s
+    while time.monotonic() <= deadline:
+        detail = _get_run(api_base, timeout_s, probe_id)
+        status = detail.get("status")
+        print(
+            f"  poll: probe_id={probe_id} status={status} "
+            f"started_at={detail.get('started_at')} finished_at={detail.get('finished_at')}"
+        )
+        if status in FINAL_STATUSES:
+            return detail
+        time.sleep(poll_interval_s)
+    raise TimeoutError(f"Timed out waiting for probe {probe_id} after {wait_timeout_s}s.")
 
-    step_record = {
-        "step": step_name,
-        "action_args": action_args,
-        "command_latency_ms": action_latency_ms,
-        "stdout": result.stdout.strip(),
-        "stderr": result.stderr.strip(),
-        "samples": [],
+
+def _build_payload(args: argparse.Namespace) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "resource_type": args.resource_type,
+        "bridge": args.bridge,
+        "timeout_s": args.trace_timeout,
+        "poll_interval_ms": args.trace_poll_interval_ms,
     }
-    print(f"\n== {step_name} ==")
-    print(f"ovn-nbctl latency: {action_latency_ms}ms")
-
-    for sample_index in range(1, sample_count + 1):
-        snapshot = _snapshot(api_base, timeout_s)
-        sample_label = f"{step_name} sample {sample_index}/{sample_count}"
-        _print_snapshot(sample_label, snapshot)
-        step_record["samples"].append(snapshot)
-        if sample_index < sample_count:
-            time.sleep(sample_interval_s)
-
-    results.append(step_record)
-
-
-def _best_effort_cleanup(docker_bin: str, nb_container: str, cleanup_steps: list[tuple[str, list[str]]]) -> None:
-    for _, args in cleanup_steps:
-        try:
-            _run_ovn_nbctl(docker_bin, nb_container, args, check=False)
-        except Exception:
-            continue
+    if args.target_name is not None:
+        payload["target_name"] = args.target_name
+    if args.expect_openflow is not None:
+        payload["expect_openflow"] = args.expect_openflow
+    return payload
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Create/delete OVN NB resources and capture API latency metrics after each step.",
-    )
+    parser = argparse.ArgumentParser(description="Test OVN canary trace APIs.")
     parser.add_argument("--api-base", default="http://127.0.0.1:8001", help="Base URL of the OVN API service.")
-    parser.add_argument("--docker-bin", default="docker", help="Docker CLI binary.")
-    parser.add_argument("--nb-container", default="ovn_nb_db", help="Container running ovn-nbctl.")
+    parser.add_argument("--mode", choices=("sync", "async"), default="async", help="Trace execution mode.")
+    parser.add_argument("--resource-type", default="acl", help="Canary resource_type to test.")
+    parser.add_argument("--target-name", default=None, help="Existing OVN switch/router target for the canary.")
+    parser.add_argument("--bridge", default="br-int", help="OpenFlow bridge for trace detection.")
+    parser.add_argument("--trace-timeout", type=float, default=15.0, help="Probe timeout passed to the API.")
     parser.add_argument(
-        "--prefix",
-        default=f"latprobe-{int(time.time())}",
-        help="Unique resource prefix used for the temporary OVN objects.",
+        "--trace-poll-interval-ms",
+        type=int,
+        default=250,
+        help="Probe poll interval passed to the API.",
     )
-    parser.add_argument("--sample-count", type=int, default=3, help="How many API samples to capture after each step.")
     parser.add_argument(
-        "--sample-interval",
-        type=float,
-        default=2.0,
-        help="Seconds between samples after each create/delete step.",
-    )
-    parser.add_argument("--http-timeout", type=float, default=5.0, help="HTTP timeout for API requests.")
-    parser.add_argument(
-        "--output",
-        type=Path,
+        "--expect-openflow",
+        dest="expect_openflow",
+        action="store_true",
         default=None,
-        help="Optional JSON file path to write the full probe result.",
+        help="Force expect_openflow=true in the probe request.",
     )
+    parser.add_argument(
+        "--no-expect-openflow",
+        dest="expect_openflow",
+        action="store_false",
+        help="Force expect_openflow=false in the probe request.",
+    )
+    parser.add_argument("--http-timeout", type=float, default=10.0, help="HTTP timeout for each API call.")
+    parser.add_argument("--wait-timeout", type=float, default=90.0, help="Async wait timeout.")
+    parser.add_argument("--wait-interval", type=float, default=1.0, help="Async poll interval.")
+    parser.add_argument("--show-capabilities", action="store_true", help="Print `/traces/capabilities` before running.")
+    parser.add_argument("--list-runs", type=int, default=5, help="How many persisted runs to print at the end.")
+    parser.add_argument("--output", type=Path, default=None, help="Optional JSON file to write the collected output.")
     args = parser.parse_args()
 
-    logical_switch = f"{args.prefix}-ls"
-    logical_router = f"{args.prefix}-lr"
-    router_port = f"{args.prefix}-lrp"
-    switch_port = f"{args.prefix}-lsp"
-
-    steps = [
-        ("create_logical_switch", ["ls-add", logical_switch]),
-        ("create_logical_router", ["lr-add", logical_router]),
-        ("create_router_port", ["lrp-add", logical_router, router_port, "aa:bb:cc:dd:ee:01", "10.254.0.1/24"]),
-        ("create_switch_router_port", ["lsp-add", logical_switch, switch_port]),
-        ("set_switch_port_type_router", ["lsp-set-type", switch_port, "router"]),
-        ("set_switch_port_addresses_router", ["lsp-set-addresses", switch_port, "router"]),
-        ("set_switch_port_option_router_port", ["lsp-set-options", switch_port, f"router-port={router_port}"]),
-        ("add_acl_drop_ip4", ["acl-add", logical_switch, "to-lport", "1001", "ip4", "drop"]),
-        ("delete_acl_drop_ip4", ["acl-del", logical_switch, "to-lport", "1001", "ip4"]),
-        ("delete_switch_port", ["lsp-del", switch_port]),
-        ("delete_router_port", ["lrp-del", router_port]),
-        ("delete_logical_router", ["lr-del", logical_router]),
-        ("delete_logical_switch", ["ls-del", logical_switch]),
-    ]
-
-    cleanup_steps = [
-        ("cleanup_acl_drop_ip4", ["acl-del", logical_switch, "to-lport", "1001", "ip4"]),
-        ("cleanup_switch_port", ["lsp-del", switch_port]),
-        ("cleanup_router_port", ["lrp-del", router_port]),
-        ("cleanup_logical_router", ["lr-del", logical_router]),
-        ("cleanup_logical_switch", ["ls-del", logical_switch]),
-    ]
-
-    results: list[dict] = []
-    run_record = {
+    payload = _build_payload(args)
+    run_record: dict[str, Any] = {
+        "captured_at": datetime.now().isoformat(timespec="seconds"),
         "api_base": args.api_base,
-        "nb_container": args.nb_container,
-        "prefix": args.prefix,
-        "sample_count": args.sample_count,
-        "sample_interval": args.sample_interval,
-        "steps": results,
+        "mode": args.mode,
+        "payload": payload,
     }
 
     try:
-        baseline = _snapshot(args.api_base, args.http_timeout)
-        run_record["baseline"] = baseline
-        _print_snapshot("baseline", baseline)
+        capabilities = _fetch_capabilities(args.api_base, args.http_timeout)
+        run_record["capabilities"] = capabilities
+        if args.show_capabilities:
+            _print_capabilities(capabilities)
 
-        for step_name, action_args in steps:
-            _probe_step(
-                step_name,
-                action_args,
-                api_base=args.api_base,
-                timeout_s=args.http_timeout,
-                docker_bin=args.docker_bin,
-                nb_container=args.nb_container,
-                sample_count=args.sample_count,
-                sample_interval_s=args.sample_interval,
-                results=results,
+        if args.mode == "sync":
+            result = _submit_sync_probe(args.api_base, args.http_timeout, payload)
+            run_record["result"] = result
+            _print_probe_result(result)
+        else:
+            submitted = _submit_async_probe(args.api_base, args.http_timeout, payload)
+            run_record["submitted"] = submitted
+            print(f"\nQueued async probe: probe_id={submitted['probe_id']} status={submitted['status']}")
+            detail = _poll_async_run(
+                args.api_base,
+                args.http_timeout,
+                submitted["probe_id"],
+                args.wait_timeout,
+                args.wait_interval,
             )
+            run_record["result"] = detail
+            if detail.get("result") is not None:
+                _print_probe_result(detail["result"])
+            else:
+                print("\nProbe did not produce a result payload.")
+                print(json.dumps(detail, indent=2))
+
+        recent_runs = _list_runs(args.api_base, args.http_timeout, args.list_runs)
+        run_record["recent_runs"] = recent_runs
+        print(f"\nRecent persisted runs: {len(recent_runs)}")
+        for item in recent_runs:
+            print(
+                "  "
+                f"{item['probe_id']} status={item['status']} "
+                f"resource={item['requested_resource_type']} "
+                f"queued_at={item['queued_at']}"
+            )
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"HTTP error from API: {exc.code} {exc.reason}\n{body}", file=sys.stderr)
+        return 1
     except urllib.error.URLError as exc:
         print(f"Failed to reach API at {args.api_base}: {exc}", file=sys.stderr)
-        _best_effort_cleanup(args.docker_bin, args.nb_container, cleanup_steps)
         return 1
-    except subprocess.CalledProcessError as exc:
-        stderr = exc.stderr.strip() if exc.stderr else str(exc)
-        print(f"ovn-nbctl command failed: {' '.join(exc.cmd)}: {stderr}", file=sys.stderr)
-        _best_effort_cleanup(args.docker_bin, args.nb_container, cleanup_steps)
+    except TimeoutError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except Exception as exc:
+        print(f"Unexpected probe runner error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
-    except KeyboardInterrupt:
-        print("\nInterrupted. Running cleanup.", file=sys.stderr)
-        _best_effort_cleanup(args.docker_bin, args.nb_container, cleanup_steps)
-        return 130
 
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(run_record, indent=2), encoding="utf-8")
-        print(f"\nWrote probe result to {args.output}")
+        print(f"\nWrote probe artifact to {args.output}")
 
     return 0
 
