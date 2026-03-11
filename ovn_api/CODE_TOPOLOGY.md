@@ -116,6 +116,22 @@ curl
  -> JSON response
 ```
 
+Neu can loc flow do ACL hoac NAT tao ra:
+
+- `/api/v1/flows/logical?origin=acl`
+- `/api/v1/flows/logical?origin=nat`
+- `/api/v1/flows/logical?origin_uuid=<UUID-cua-ACL-hoac-NAT>`
+
+Service se doc `Logical_Flow.external_ids["stage-hint"]` trong SB DB va doi
+chieu voi UUID cua `ACL` va `NAT` trong NB DB de xac dinh flow do object nao sinh ra.
+
+Neu can xem so luong tong hop:
+
+- `/api/v1/flows/logical/summary`
+
+Endpoint nay tra ve tong so logical flow, logical flow do ACL sinh ra,
+logical flow do NAT sinh ra, tong so ACL va tong so NAT.
+
 ### 3.3 Khi goi `/api/v1/flows/openflow`
 
 ```text
@@ -139,6 +155,7 @@ curl
 | `/api/v1/switches` | IDL | OVN Northbound OVSDB | `app/services/topology_service.py` | `ovsdbapp` wrapper hoac service layer cao hon |
 | `/api/v1/switches/{id}` | IDL | OVN Northbound OVSDB | `app/services/topology_service.py` | `ovsdbapp` wrapper hoac service layer cao hon |
 | `/api/v1/flows/logical` | IDL | OVN Southbound OVSDB | `app/services/flow_service.py` | `ovsdbapp` wrapper hoac event stream tu SB |
+| `/api/v1/flows/logical/summary` | IDL | OVN Southbound + OVN Northbound OVSDB | `app/services/flow_service.py` | cache layer hoac Prometheus exporter |
 | `/api/v1/chassis` | IDL | OVN Southbound OVSDB | `app/services/chassis_service.py` | `ovsdbapp` wrapper hoac cache layer |
 | `/api/v1/chassis/{id}/bindings` | IDL | OVN Southbound OVSDB | `app/services/chassis_service.py` | `ovsdbapp` wrapper hoac cache layer |
 | `/api/v1/metrics/capacity` | IDL | NB + SB OVSDB | `app/services/metrics_service.py` | Prometheus exporter hoac metrics cache |
@@ -278,6 +295,7 @@ Day la dinh nghia output JSON. Ban co the hieu don gian: model quy dinh API se t
 - `app/routers/flows.py`
   Endpoint:
   - `/api/v1/flows/logical`
+  - `/api/v1/flows/logical/summary`
   - `/api/v1/flows/openflow`
 
 - `app/routers/chassis.py`
@@ -303,6 +321,8 @@ Day la dinh nghia output JSON. Ban co the hieu don gian: model quy dinh API se t
 - `app/services/flow_service.py`
   Xu ly:
   - logical flow tu OVN Southbound
+  - doi chieu `stage-hint` voi UUID `ACL`/`NAT` de xac dinh logical flow do ACL hay NAT sinh ra
+  - dem so luong logical flow theo nhom ACL/NAT
   - openflow tu OVS
 
 - `app/services/chassis_service.py`
@@ -332,6 +352,7 @@ Day la dinh nghia output JSON. Ban co the hieu don gian: model quy dinh API se t
 - `app/models/flow.py`
   Dinh nghia JSON cho:
   - LogicalFlow
+  - LogicalFlowOriginSummary
   - OpenFlowDump
 
 - `app/models/chassis.py`

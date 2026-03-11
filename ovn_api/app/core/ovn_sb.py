@@ -12,6 +12,7 @@ SB_TABLES = (
     "Chassis_Private",
     "Datapath_Binding",
     "Encap",
+    "Logical_Flow",
     "Port_Binding",
 )
 
