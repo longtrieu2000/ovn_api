@@ -283,7 +283,6 @@ class CanaryTraceService:
             prepared.setup_commands = setup_commands
             prepared.cleanup_commands = [
                 [
-                    "--if-exists",
                     "--type=switch",
                     "acl-del",
                     switch_ref,
@@ -686,7 +685,7 @@ class CanaryTraceService:
             f"A temporary logical switch {switch_name!r} is created as the canary target.",
             [["ls-add", switch_name]],
             [["--if-exists", "ls-del", switch_name]],
-            ("logical_switch", switch_name),
+            None,
         )
 
     def _resolve_router_target(
@@ -704,7 +703,7 @@ class CanaryTraceService:
             f"A temporary logical router {router_name!r} is created as the canary target.",
             [["lr-add", router_name]],
             [["--if-exists", "lr-del", router_name]],
-            ("logical_router", router_name),
+            None,
         )
 
     def _require_nb_row(self, table_name: str, reference: str):
