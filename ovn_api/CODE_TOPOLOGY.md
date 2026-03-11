@@ -185,7 +185,7 @@ curl
 | `/api/v1/chassis/{id}/bindings` | IDL | OVN Southbound OVSDB | `app/services/chassis_service.py` | `ovsdbapp` wrapper hoac cache layer |
 | `/api/v1/metrics/capacity` | IDL | NB + SB OVSDB | `app/services/metrics_service.py` | Prometheus exporter hoac metrics cache |
 | `/api/v1/metrics/datapath` | Background cache + CMD collector | `ovs-appctl dpctl/show` duoc collector goi dinh ky | `app/services/metrics_service.py`, `app/services/datapath_metrics_collector.py` | OVS telemetry/exporter rieng hoac interface runtime khac |
-| `/api/v1/metrics/latency` | IDL | NB + SB OVSDB | `app/services/metrics_service.py` | Prometheus exporter hoac metrics cache |
+| `/api/v1/metrics/latency` | IDL + OVSDB RPC | `BFD` tu SB DB, `OVSDB transact/select` qua NB/SB RPC, `OpenFlow installation` hien de o trang thai `requires_active_probe` | `app/services/metrics_service.py` | canary trace module cho openflow install latency |
 | `/api/v1/flows/openflow` | CMD | `ovs-ofctl dump-flows` | `app/services/flow_service.py`, `app/core/ovs.py` | OVSDB appctl wrapper, OVS Python/runtime API neu can, hoac parser service rieng |
 
 ### 4.2 Bang Theo Thanh Phan Noi Bo

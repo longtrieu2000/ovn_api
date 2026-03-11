@@ -4,7 +4,7 @@ import os
 import time
 import errno
 from threading import Lock
-from typing import Iterable
+from typing import Any, Iterable
 
 from fastapi import HTTPException
 from ovs.db.idl import Idl, SchemaHelper
@@ -85,7 +85,43 @@ class OvsdbIdlClient:
                 ),
             ) from exc
 
+    def measure_select_latency_ms(self, *, table: str) -> float:
+        start = time.perf_counter()
+        result = self._rpc_request(
+            "transact",
+            [
+                self.schema_db_name,
+                {
+                    "op": "select",
+                    "table": table,
+                    "where": [],
+                    "columns": ["_uuid"],
+                },
+            ],
+        )
+        if not isinstance(result, list):
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"OVSDB RPC transact returned unexpected result for {self.label}. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r} table={table!r}"
+                ),
+            )
+        return round((time.perf_counter() - start) * 1000, 3)
+
     def _fetch_schema_via_rpc(self) -> dict:
+        result = self._rpc_request("get_schema", [self.schema_db_name])
+        if not isinstance(result, dict):
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"OVSDB RPC get_schema returned unexpected result for {self.label}. "
+                    f"remote={self.remote!r} db_name={self.schema_db_name!r}"
+                ),
+            )
+        return result
+
+    def _rpc_request(self, method: str, params: list[object]) -> Any:
         timeout_ms = int(self.sync_timeout_s * 1000)
         error, rpc_stream = stream.Stream.open_block(stream.Stream.open(self.remote), timeout=timeout_ms)
         if error or rpc_stream is None:
@@ -99,7 +135,7 @@ class OvsdbIdlClient:
 
         rpc = jsonrpc.Connection(rpc_stream)
         try:
-            request = jsonrpc.Message.create_request("get_schema", [self.schema_db_name])
+            request = jsonrpc.Message.create_request(method, params)
             error, reply = rpc.transact_block(request)
         finally:
             rpc.close()
@@ -112,7 +148,7 @@ class OvsdbIdlClient:
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"OVSDB RPC get_schema failed for {self.label}. "
+                    f"OVSDB RPC {method} failed for {self.label}. "
                     f"remote={self.remote!r} db_name={self.schema_db_name!r} error={error_text}"
                 ),
             )
@@ -121,7 +157,7 @@ class OvsdbIdlClient:
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"OVSDB RPC get_schema returned no reply for {self.label}. "
+                    f"OVSDB RPC {method} returned no reply for {self.label}. "
                     f"remote={self.remote!r} db_name={self.schema_db_name!r}"
                 ),
             )
@@ -130,20 +166,10 @@ class OvsdbIdlClient:
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"OVSDB RPC get_schema returned error for {self.label}. "
+                    f"OVSDB RPC {method} returned error for {self.label}. "
                     f"remote={self.remote!r} db_name={self.schema_db_name!r} error={reply.error!r}"
                 ),
             )
-
-        if not isinstance(reply.result, dict):
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    f"OVSDB RPC get_schema returned unexpected result for {self.label}. "
-                    f"remote={self.remote!r} db_name={self.schema_db_name!r}"
-                ),
-            )
-
         return reply.result
 
     def _sync(self) -> None:
