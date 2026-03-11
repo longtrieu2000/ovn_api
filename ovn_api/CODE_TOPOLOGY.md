@@ -119,18 +119,43 @@ curl
 Neu can loc flow do ACL hoac NAT tao ra:
 
 - `/api/v1/flows/logical?origin=acl`
+- `/api/v1/flows/logical?origin=acl_exact`
+- `/api/v1/flows/logical?origin=acl_stage_generic`
 - `/api/v1/flows/logical?origin=nat`
+- `/api/v1/flows/logical?origin=nat_exact`
+- `/api/v1/flows/logical?origin=nat_stage_generic`
 - `/api/v1/flows/logical?origin_uuid=<UUID-cua-ACL-hoac-NAT>`
 
-Service se doc `Logical_Flow.external_ids["stage-hint"]` trong SB DB va doi
-chieu voi UUID cua `ACL` va `NAT` trong NB DB de xac dinh flow do object nao sinh ra.
+Service se classify theo 2 tang:
+
+- `acl_exact` / `nat_exact`:
+  doc `Logical_Flow.external_ids["stage-hint"]` trong SB DB va doi chieu voi
+  UUID hoac prefix UUID cua `ACL` / `NAT` trong NB DB.
+- `acl_stage_generic` / `nat_stage_generic`:
+  fallback theo `stage-name` khi flow nam trong ACL/NAT pipeline nhung khong
+  map exact duoc ve tung ACL/NAT.
 
 Neu can xem so luong tong hop:
 
 - `/api/v1/flows/logical/summary`
 
-Endpoint nay tra ve tong so logical flow, logical flow do ACL sinh ra,
-logical flow do NAT sinh ra, tong so ACL va tong so NAT.
+Endpoint nay tra ve:
+
+- tong so logical flow
+- tong so logical flow lien quan ACL
+- tong so logical flow lien quan NAT
+- tach rieng `exact` va `stage_generic`
+- tong so ACL va tong so NAT
+
+Bang classify moi:
+
+| `origin_type` | Y nghia |
+| --- | --- |
+| `acl_exact` | Flow map exact duoc ve 1 ACL trong NB bang `stage-hint` full UUID hoac UUID prefix |
+| `acl_stage_generic` | Flow thuoc ACL pipeline nhung khong map exact duoc ve 1 ACL |
+| `nat_exact` | Flow map exact duoc ve 1 NAT trong NB bang `stage-hint` full UUID hoac UUID prefix |
+| `nat_stage_generic` | Flow thuoc NAT pipeline nhung khong map exact duoc ve 1 NAT |
+| `other` | Flow khong thuoc ACL/NAT pipeline hoac khong du thong tin de classify |
 
 ### 3.3 Khi goi `/api/v1/flows/openflow`
 

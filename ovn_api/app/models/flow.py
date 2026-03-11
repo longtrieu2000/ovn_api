@@ -5,7 +5,23 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-LogicalFlowOrigin = Literal["acl", "nat", "other"]
+LogicalFlowOriginType = Literal[
+    "acl_exact",
+    "acl_stage_generic",
+    "nat_exact",
+    "nat_stage_generic",
+    "other",
+]
+
+LogicalFlowOriginFilter = Literal[
+    "acl",
+    "acl_exact",
+    "acl_stage_generic",
+    "nat",
+    "nat_exact",
+    "nat_stage_generic",
+    "other",
+]
 
 
 class LogicalFlow(BaseModel):
@@ -18,7 +34,7 @@ class LogicalFlow(BaseModel):
     stage_name: str | None = None
     stage_hint: str | None = None
     source: str | None = None
-    origin_type: LogicalFlowOrigin = "other"
+    origin_type: LogicalFlowOriginType = "other"
     origin_uuid: str | None = None
     external_ids: dict[str, str] = Field(default_factory=dict)
 
@@ -26,7 +42,11 @@ class LogicalFlow(BaseModel):
 class LogicalFlowOriginSummary(BaseModel):
     logical_flow_count: int
     acl_logical_flow_count: int
+    acl_exact_logical_flow_count: int
+    acl_stage_generic_logical_flow_count: int
     nat_logical_flow_count: int
+    nat_exact_logical_flow_count: int
+    nat_stage_generic_logical_flow_count: int
     other_logical_flow_count: int
     acl_count: int
     nat_count: int
