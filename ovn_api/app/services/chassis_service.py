@@ -19,6 +19,11 @@ def _bool_or_none(value: object) -> bool | None:
 def _row_uuid(value: object) -> str | None:
     if value is None:
         return None
+    if isinstance(value, (list, tuple, set, frozenset)):
+        if not value:
+            return None
+        first_item = next(iter(value))
+        return _row_uuid(first_item)
     uuid_value = getattr(value, "uuid", None)
     if uuid_value is not None:
         return str(uuid_value)
@@ -122,5 +127,7 @@ class ChassisService:
         if isinstance(value, list):
             if not value:
                 return None
-            return str(value[0])
+            first_item = value[0]
+            row_name = _row_name(first_item)
+            return row_name if row_name is not None else str(first_item)
         return str(value)

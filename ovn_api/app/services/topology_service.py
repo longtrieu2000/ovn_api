@@ -34,6 +34,11 @@ def _string_list(value: object) -> list[str]:
 def _row_name(value: object) -> str | None:
     if value is None:
         return None
+    if isinstance(value, (list, tuple, set, frozenset)):
+        if not value:
+            return None
+        first_item = next(iter(value))
+        return _row_name(first_item)
     return getattr(value, "name", None) or str(getattr(value, "uuid", value))
 
 
