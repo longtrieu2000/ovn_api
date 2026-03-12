@@ -1,0 +1,24 @@
+services:
+  ovn-trace-postgres:
+    image: postgres:16
+    container_name: ovn_trace_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ovn_api
+      POSTGRES_USER: ovn_api
+      POSTGRES_PASSWORD: ovn_api_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - ovn_trace_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  ovn_trace_postgres_data:
