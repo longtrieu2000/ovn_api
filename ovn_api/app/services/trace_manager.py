@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -32,6 +33,7 @@ class CanaryTraceManager:
         self._stop_event = threading.Event()
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._thread: threading.Thread | None = None
+        self._listeners: list[Callable[[CanaryRunSummary], None]] = []
 
     def start(self) -> None:
         with self._lock:
@@ -80,6 +82,7 @@ class CanaryTraceManager:
         self.trace_store.create_run(record)
         self.trace_store.prune_finished_runs(max_runs=self.max_runs)
         self._queue.put(prepared.probe_id)
+        self._emit_run_update(record)
         return self.get_run(prepared.probe_id)
 
     def run_sync(self, request: CanaryProbeRequest) -> CanaryProbeResult:
@@ -97,6 +100,7 @@ class CanaryTraceManager:
             queue_depth=0,
         )
         self.trace_store.create_run(record)
+        self._emit_run_update(record)
         try:
             result = self.trace_service.run_prepared_probe(prepared)
         except HTTPException as exc:
@@ -108,6 +112,7 @@ class CanaryTraceManager:
             record.finished_at = finished_at
             self.trace_store.update_run(record)
             self.trace_store.prune_finished_runs(max_runs=self.max_runs)
+            self._emit_run_update(record)
             raise
         except Exception as exc:  # pragma: no cover - unexpected runtime failure
             finished_at = _isoformat(_now_utc()) or ""
@@ -117,6 +122,7 @@ class CanaryTraceManager:
             record.finished_at = finished_at
             self.trace_store.update_run(record)
             self.trace_store.prune_finished_runs(max_runs=self.max_runs)
+            self._emit_run_update(record)
             raise
 
         finished_at = _isoformat(_now_utc()) or ""
@@ -127,7 +133,27 @@ class CanaryTraceManager:
         record.finished_at = finished_at
         self.trace_store.update_run(record)
         self.trace_store.prune_finished_runs(max_runs=self.max_runs)
+        self._emit_run_update(record)
         return result
+
+    def register_listener(self, listener: Callable[[CanaryRunSummary], None]) -> None:
+        with self._lock:
+            if listener not in self._listeners:
+                self._listeners.append(listener)
+
+    def unregister_listener(self, listener: Callable[[CanaryRunSummary], None]) -> None:
+        with self._lock:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+    def get_runtime_metrics(self) -> dict[str, int | bool]:
+        with self._lock:
+            thread = self._thread
+            return {
+                "queue_depth": self._queue.qsize(),
+                "worker_alive": bool(thread is not None and thread.is_alive()),
+                "max_runs": self.max_runs,
+            }
 
     def list_runs(self, *, limit: int = 20) -> list[CanaryRunSummary]:
         self.trace_store.initialize()
@@ -163,6 +189,7 @@ class CanaryTraceManager:
             record.started_at = now
             record.updated_at = now
             self.trace_store.update_run(record)
+            self._emit_run_update(record)
 
             try:
                 result = self.trace_service.run_prepared_probe(record.prepared)
@@ -188,6 +215,7 @@ class CanaryTraceManager:
         record.finished_at = finished_at
         self.trace_store.update_run(record)
         self.trace_store.prune_finished_runs(max_runs=self.max_runs)
+        self._emit_run_update(record)
 
     def _mark_failed(self, probe_id: str, error: str) -> None:
         record = self.trace_store.get_run(probe_id)
@@ -200,6 +228,7 @@ class CanaryTraceManager:
         record.finished_at = finished_at
         self.trace_store.update_run(record)
         self.trace_store.prune_finished_runs(max_runs=self.max_runs)
+        self._emit_run_update(record)
 
     def _to_summary(self, record: PersistedCanaryRun) -> CanaryRunSummary:
         result = record.result
@@ -227,6 +256,16 @@ class CanaryTraceManager:
             result=record.result.model_copy(deep=True) if record.result is not None else None,
             error=record.error,
         )
+
+    def _emit_run_update(self, record: PersistedCanaryRun) -> None:
+        summary = self._to_summary(record)
+        with self._lock:
+            listeners = list(self._listeners)
+        for listener in listeners:
+            try:
+                listener(summary.model_copy(deep=True))
+            except Exception:
+                continue
 
 
 @lru_cache(maxsize=1)

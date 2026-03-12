@@ -25,6 +25,9 @@ class Settings:
     ovs_ofctl_bin: str
     trace_store_url: str
     trace_store_max_runs: int
+    live_monitoring_interval_s: float
+    live_monitoring_latency_interval_s: float
+    live_monitoring_ws_queue_size: int
 
 
 @lru_cache(maxsize=1)
@@ -48,4 +51,7 @@ def get_settings() -> Settings:
         ovs_ofctl_bin=os.getenv("OVS_OFCTL_BIN", "ovs-ofctl"),
         trace_store_url=os.getenv("TRACE_STORE_URL", "sqlite:///./ovn_api/data/canary_traces.db"),
         trace_store_max_runs=int(os.getenv("TRACE_STORE_MAX_RUNS", "500")),
+        live_monitoring_interval_s=float(os.getenv("LIVE_MONITORING_INTERVAL_S", "5.0")),
+        live_monitoring_latency_interval_s=float(os.getenv("LIVE_MONITORING_LATENCY_INTERVAL_S", "15.0")),
+        live_monitoring_ws_queue_size=int(os.getenv("LIVE_MONITORING_WS_QUEUE_SIZE", "32")),
     )

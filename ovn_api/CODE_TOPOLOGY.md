@@ -20,6 +20,7 @@ app/main.py
         +--> routers/topology.py
         +--> routers/chassis.py
         +--> routers/metrics.py
+        +--> routers/monitoring.py
         +--> routers/traces.py
                 |
                 v
@@ -85,6 +86,19 @@ app/main.py
                             +--> app/core/ovs.py
                                     |
                                     +--> app/core/command.py
+    |
+    +--> app/routers/monitoring.py
+            |
+            +--> app/services/live_monitoring_service.py
+            |       |
+            |       +--> app/services/metrics_service.py
+            |       +--> app/services/trace_manager.py
+            |       +--> app/services/api_metrics.py
+            |               |
+            |               +--> middleware/api_metrics.py
+            |
+            +--> WebSocket push stream
+            +--> Prometheus exporter
     |
     +--> app/routers/traces.py
             |
@@ -218,6 +232,39 @@ curl
  -> queue in-memory
  -> worker thread
  -> services/trace_service.py
+
+### 3.6 Khi goi `GET /api/v1/monitoring/live`
+
+```text
+curl
+ -> routers/monitoring.py
+ -> services/live_monitoring_service.py
+ -> doc snapshot cache moi nhat
+ -> models/monitoring.py
+ -> JSON response
+```
+
+Endpoint nay khong scrape truc tiep OVN moi request. Du lieu duoc background collector lam moi theo interval.
+
+### 3.7 Khi Prometheus scrape `/api/v1/monitoring/prometheus`
+
+```text
+Prometheus
+ -> routers/monitoring.py
+ -> services/live_monitoring_service.py
+ -> render text exposition tu snapshot cache + API runtime counters
+ -> text/plain response
+```
+
+### 3.8 Khi client mo `WS /api/v1/ws/monitoring/live`
+
+```text
+WebSocket client
+ -> routers/monitoring.py
+ -> services/live_monitoring_service.py
+ -> subscribe queue fan-out
+ -> push event type=snapshot / trace_run / heartbeat
+```
  -> ovn-nbctl / NB / SB / OVS
  -> ket qua duoc update vao SQL store
  -> client poll lai `GET /api/v1/traces/canary/runs/{probe_id}`

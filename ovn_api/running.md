@@ -69,6 +69,14 @@ export OVS_OFCTL_BIN=ovs-ofctl
 export OVS_APPCTL_BIN=ovs-appctl
 ```
 
+Neu bat live monitoring/exporter, co the tinh chinh them:
+
+```bash
+export LIVE_MONITORING_INTERVAL_S=5
+export LIVE_MONITORING_LATENCY_INTERVAL_S=15
+export LIVE_MONITORING_WS_QUEUE_SIZE=32
+```
+
 ## 4. Chay app
 
 Tu workspace root:
@@ -88,7 +96,86 @@ Neu service da len, kiem tra nhanh:
 curl -s http://127.0.0.1:8001/api/v1/traces/capabilities | jq '.sync_endpoint, .store_scope'
 ```
 
-## 5. API capability
+## 5. Live monitoring va Prometheus
+
+### 5.1. Snapshot cache hien tai
+
+```bash
+curl -s http://127.0.0.1:8001/api/v1/monitoring/live | jq
+```
+
+Endpoint nay tra ve snapshot cache tong hop:
+
+- `capacity`
+- `datapath`
+- `latency`
+- `trace_runtime`
+- `api_runtime`
+- `errors`
+
+Luu y:
+
+- endpoint nay doc tu background collector cache
+- khong do lai OVN DB moi lan client goi
+- phu hop cho dashboard/API polling nhe
+
+### 5.2. Prometheus exporter
+
+Scrape endpoint:
+
+```bash
+curl -s http://127.0.0.1:8001/api/v1/monitoring/prometheus
+```
+
+Metric chinh dang duoc export:
+
+- `ovn_api_exporter_up`
+- `ovn_api_capacity_*`
+- `ovn_api_datapath_*`
+- `ovn_api_ovsdb_*`
+- `ovn_api_bfd_*`
+- `ovn_api_trace_*`
+- `ovn_api_http_*`
+- `ovn_api_websocket_*`
+
+Vi du scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: ovn_api
+    scrape_interval: 15s
+    metrics_path: /api/v1/monitoring/prometheus
+    static_configs:
+      - targets: ['127.0.0.1:8001']
+```
+
+### 5.3. WebSocket push-based live stream
+
+WebSocket endpoint:
+
+```text
+ws://127.0.0.1:8001/api/v1/ws/monitoring/live
+```
+
+Su kien dang push:
+
+- `snapshot`
+- `trace_run`
+- `heartbeat`
+
+Neu co `websocat`:
+
+```bash
+websocat ws://127.0.0.1:8001/api/v1/ws/monitoring/live
+```
+
+Neu muon khong gui snapshot ngay khi connect:
+
+```bash
+websocat 'ws://127.0.0.1:8001/api/v1/ws/monitoring/live?send_initial=false'
+```
+
+## 6. API capability
 
 Xem mapping resource:
 
@@ -109,7 +196,7 @@ Luu y:
 - khong co `target_name` thi thong thuong chi do toi `NB -> SB`
 - muon co `sb_to_openflow_latency_ms` thi nen truyen `target_name` cua mot `Logical_Switch` that dang realize tren local `br-int`
 
-## 6. POST API lay latency
+## 7. POST API lay latency
 
 Endpoint sync:
 
@@ -127,7 +214,7 @@ Field latency quan trong trong response:
 - `sb_to_openflow_latency_ms`
 - `total_latency_ms`
 
-### 6.1. Latency cho logical switch
+### 7.1. Latency cho logical switch
 
 ```bash
 curl -s -X POST http://127.0.0.1:8001/api/v1/traces/canary \
@@ -165,7 +252,7 @@ Luu y:
 - vi vay `openflow_realized` thuong la `skipped`
 - neu `sb_realized` timeout thi `nb_to_sb_latency_ms` va `total_latency_ms` se la `null`
 
-### 6.2. Latency cho logical router
+### 7.2. Latency cho logical router
 
 ```bash
 curl -s -X POST http://127.0.0.1:8001/api/v1/traces/canary \
@@ -202,7 +289,7 @@ Luu y:
 - `logical_router` cung chu yeu la `NB -> SB`
 - `openflow_realized` thuong la `skipped`
 
-### 6.3. Latency cho logical flow
+### 7.3. Latency cho logical flow
 
 `logical_flow` khong duoc tao truc tiep trong NB. Probe se tao `ACL canary` de ep OVN sinh `Logical_Flow` trong SB.
 
@@ -297,7 +384,7 @@ Neu `sb_to_openflow_latency_ms` van la `null`, thuong la do:
 - `br-int` khong phai bridge chua datapath do
 - OpenFlow cho datapath nay chua duoc realize trong khoang timeout
 
-## 7. API async
+## 8. API async
 
 Neu khong muon HTTP request block den luc trace xong:
 
@@ -324,7 +411,7 @@ curl -s http://127.0.0.1:8001/api/v1/traces/canary/runs | jq
 curl -s http://127.0.0.1:8001/api/v1/traces/canary/runs/<probe_id> | jq
 ```
 
-## 8. Loi thuong gap
+## 9. Loi thuong gap
 
 ### `Method Not Allowed`
 
@@ -345,6 +432,22 @@ Kiem tra:
 - app da chay o `127.0.0.1:8001` chua
 - PostgreSQL neu co da start chua
 - OVN NB/SB DB co reachable chua
+
+### Prometheus scrape timeout
+
+Kiem tra:
+
+- scrape path co dung `/api/v1/monitoring/prometheus` khong
+- `LIVE_MONITORING_INTERVAL_S` co dang dat qua thap khong
+- exporter co dang bi tre vi OVN DB loi hay khong, xem `ovn_api_monitoring_component_up`
+
+### WebSocket khong nhan du lieu
+
+Kiem tra:
+
+- endpoint co dung `ws://127.0.0.1:8001/api/v1/ws/monitoring/live` khong
+- reverse proxy co support WebSocket upgrade khong
+- `ovn_api_websocket_clients` va `ovn_api_websocket_messages_sent_total` tren Prometheus co tang khong
 
 ### `openflow_realized.status = skipped`
 
