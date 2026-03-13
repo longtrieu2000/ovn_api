@@ -568,7 +568,7 @@ Noi ngan gon:
 
 ## 8. Cach Doc Code Neu Ban Khong Gioi Python
 
-Nen doc theo thu tu nay:
+Doc theo thu tu nay:
 
 1. `app/main.py`
 2. `app/routers/topology.py`
@@ -601,15 +601,15 @@ Nhung file sau khong can doc ky trong giai doan dau:
 - `__init__.py` trong `core/`, `routers/`, `services/`, `models/`
 - `__pycache__/`
 
-Ban chi can biet chung dung de Python nhan package hoac cache bytecode.
+Can biet chung dung de Python nhan package hoac cache bytecode.
 
-## 11. Tom Tat Mot Cau
+## 11. Tom Tat 
 
 He thong nay duoc thiet ke theo luong:
 
 `HTTP request -> router -> service -> core -> OVN/OVS -> model -> JSON response`
 
-Neu can mo rong them API moi, ban thuong chi can them:
+Neu can mo rong them API moi, chi can them:
 
 1. route moi trong `routers/`
 2. ham xu ly moi trong `services/`
