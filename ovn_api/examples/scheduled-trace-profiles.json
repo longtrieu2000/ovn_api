@@ -1,0 +1,34 @@
+{
+  "profiles": [
+    {
+      "name": "logical_flow_auto",
+      "resource_type": "logical_flow",
+      "interval_s": 60,
+      "timeout_s": 15,
+      "poll_interval_ms": 250
+    },
+    {
+      "name": "logical_flow_fixed_switch",
+      "resource_type": "logical_flow",
+      "target_name": "neutron-<logical-switch-name>",
+      "bridge": "br-int",
+      "interval_s": 60,
+      "timeout_s": 15,
+      "poll_interval_ms": 250
+    },
+    {
+      "name": "logical_switch_default",
+      "resource_type": "logical_switch",
+      "interval_s": 90,
+      "timeout_s": 15,
+      "poll_interval_ms": 250
+    },
+    {
+      "name": "logical_router_default",
+      "resource_type": "logical_router",
+      "interval_s": 90,
+      "timeout_s": 15,
+      "poll_interval_ms": 250
+    }
+  ]
+}

@@ -93,6 +93,7 @@ app/main.py
             |       |
             |       +--> app/services/metrics_service.py
             |       +--> app/services/trace_manager.py
+            |       +--> app/services/scheduled_trace_metrics_service.py
             |       +--> app/services/api_metrics.py
             |               |
             |               +--> middleware/api_metrics.py
@@ -252,7 +253,8 @@ Endpoint nay khong scrape truc tiep OVN moi request. Du lieu duoc background col
 Prometheus
  -> routers/monitoring.py
  -> services/live_monitoring_service.py
- -> render text exposition tu snapshot cache + API runtime counters
+ -> services/scheduled_trace_metrics_service.py
+ -> render text exposition tu snapshot cache + API runtime counters + scheduled trace last-result metrics
  -> text/plain response
 ```
 

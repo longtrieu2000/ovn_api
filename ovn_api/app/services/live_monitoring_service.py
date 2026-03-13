@@ -20,6 +20,7 @@ from ..models.monitoring import (
 from ..models.traces import CanaryRunSummary
 from .api_metrics import get_api_metrics_store
 from .metrics_service import MetricsService
+from .scheduled_trace_metrics_service import get_scheduled_trace_metrics_service
 from .trace_manager import get_canary_trace_manager
 
 
@@ -59,6 +60,7 @@ class LiveMonitoringService:
         self.queue_size = max(queue_size, 4)
         self.metrics_service = MetricsService()
         self.trace_manager = get_canary_trace_manager()
+        self.scheduled_trace_metrics_service = get_scheduled_trace_metrics_service()
         self.api_metrics = get_api_metrics_store()
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -85,6 +87,7 @@ class LiveMonitoringService:
             thread = self._thread
 
         self.trace_manager.start()
+        self.scheduled_trace_metrics_service.start()
         self._register_trace_listener()
         self._refresh_safely(force_latency=True)
         thread.start()
@@ -98,6 +101,7 @@ class LiveMonitoringService:
         if thread is not None:
             thread.join(timeout=self.interval_s + 1.0)
         self._unregister_trace_listener()
+        self.scheduled_trace_metrics_service.stop()
 
     def get_snapshot(self) -> MonitoringSnapshot:
         self.start()
@@ -297,6 +301,12 @@ class LiveMonitoringService:
             self._append_metric(lines, "ovn_api_trace_queue_depth", snapshot.trace_runtime.queue_depth)
             self._append_metric(lines, "ovn_api_trace_worker_up", 1 if snapshot.trace_runtime.worker_alive else 0)
             self._append_metric(lines, "ovn_api_trace_max_runs", snapshot.trace_runtime.max_runs)
+            if snapshot.scheduled_trace_metrics is not None:
+                self.scheduled_trace_metrics_service.append_prometheus_metrics(
+                    lines,
+                    append_metric=self._append_metric,
+                    append_optional_metric=self._append_optional_metric,
+                )
 
         self._append_metric(lines, "ovn_api_http_requests_total", api_runtime.http_requests_total)
         self._append_metric(lines, "ovn_api_http_requests_in_flight", api_runtime.http_requests_in_flight)
@@ -369,6 +379,7 @@ class LiveMonitoringService:
             self._update_latency_state()
 
         trace_runtime = TraceRuntimeMetrics(**self.trace_manager.get_runtime_metrics())
+        scheduled_trace_metrics = self.scheduled_trace_metrics_service.get_snapshot_or_none()
         api_runtime = self.api_metrics.get_snapshot()
         capacity_status = self._component_status(self._capacity, now)
         datapath_status = self._component_status(self._datapath, now)
@@ -394,6 +405,7 @@ class LiveMonitoringService:
             datapath_status=datapath_status,
             latency_status=latency_status,
             trace_runtime=trace_runtime,
+            scheduled_trace_metrics=scheduled_trace_metrics,
             api_runtime=api_runtime,
             errors=errors,
         )

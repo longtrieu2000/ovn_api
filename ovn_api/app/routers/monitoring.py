@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
 from ..models.monitoring import MonitoringEvent, MonitoringSnapshot
+from ..models.trace_metrics import ScheduledTraceMetricsSnapshot
 from ..services.api_metrics import get_api_metrics_store
 from ..services.live_monitoring_service import get_live_monitoring_service
+from ..services.scheduled_trace_metrics_service import get_scheduled_trace_metrics_service
 
 
 router = APIRouter()
@@ -27,6 +29,18 @@ def get_live_monitoring_snapshot() -> MonitoringSnapshot:
 def get_prometheus_metrics() -> PlainTextResponse:
     payload = get_live_monitoring_service().render_prometheus_text()
     return PlainTextResponse(payload, media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
+@router.get("/monitoring/trace-metrics", response_model=ScheduledTraceMetricsSnapshot)
+def get_scheduled_trace_metrics() -> ScheduledTraceMetricsSnapshot:
+    return get_scheduled_trace_metrics_service().get_snapshot()
+
+
+@router.post("/monitoring/trace-metrics/reload", response_model=ScheduledTraceMetricsSnapshot)
+def reload_scheduled_trace_metrics(
+    reload_settings: bool = Query(default=False),
+) -> ScheduledTraceMetricsSnapshot:
+    return get_scheduled_trace_metrics_service().reload(reload_settings=reload_settings)
 
 
 @router.websocket("/ws/monitoring/live")

@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .metrics import CapacityMetrics, DatapathMetrics, LatencyMetrics
+from .trace_metrics import ScheduledTraceMetricsSnapshot
 from .traces import CanaryRunSummary
 
 
@@ -49,6 +50,7 @@ class MonitoringSnapshot(BaseModel):
     datapath_status: MonitoringComponentStatus
     latency_status: MonitoringComponentStatus
     trace_runtime: TraceRuntimeMetrics
+    scheduled_trace_metrics: ScheduledTraceMetricsSnapshot | None = None
     api_runtime: ApiRuntimeMetrics
     errors: list[str] = Field(default_factory=list)
 

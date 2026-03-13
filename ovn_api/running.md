@@ -75,6 +75,15 @@ Neu bat live monitoring/exporter, co the tinh chinh them:
 export LIVE_MONITORING_INTERVAL_S=5
 export LIVE_MONITORING_LATENCY_INTERVAL_S=15
 export LIVE_MONITORING_WS_QUEUE_SIZE=32
+export SCHEDULED_TRACE_METRICS_ENABLED=true
+export SCHEDULED_TRACE_METRICS_INTERVAL_S=60
+export SCHEDULED_TRACE_METRICS_TIMEOUT_S=15
+export SCHEDULED_TRACE_METRICS_POLL_INTERVAL_MS=250
+export SCHEDULED_TRACE_METRICS_DEFAULT_BRIDGE=br-int
+# Neu muon co dinh target cho logical_flow:
+# export SCHEDULED_TRACE_METRICS_DEFAULT_LOGICAL_SWITCH_TARGET_NAME=neutron-<logical-switch-name>
+# Neu muon dung danh sach profile tu file:
+# export SCHEDULED_TRACE_METRICS_PROFILES_FILE=/home/longth1/workspace/openstack/ovn_api/examples/scheduled-trace-profiles.json
 ```
 
 ## 4. Chay app
@@ -148,6 +157,70 @@ scrape_configs:
     static_configs:
       - targets: ['127.0.0.1:8001']
 ```
+
+### 5.2.1. Debug scheduled trace metrics
+
+Xem JSON snapshot cua active scheduled trace metrics:
+
+```bash
+curl -s http://127.0.0.1:8001/api/v1/monitoring/trace-metrics | jq
+```
+
+Endpoint nay cho thay:
+
+- profile nao dang bat
+- `target_name` da auto-fill thanh gia tri nao
+- lan probe gan nhat `success/timeout/failed`
+- phase nao dang timeout
+
+Reload lai danh sach profile tu source hien tai ma khong can restart app:
+
+```bash
+curl -s -X POST http://127.0.0.1:8001/api/v1/monitoring/trace-metrics/reload | jq
+```
+
+Neu worker dang dung source la file JSON, lenh tren se re-doc file va restart background scheduler nhe.
+
+Neu ban can clear cache settings va doc lai env cua process:
+
+```bash
+curl -s -X POST 'http://127.0.0.1:8001/api/v1/monitoring/trace-metrics/reload?reload_settings=true' | jq
+```
+
+Luu y:
+
+- de no-restart thuc su, nen dung `SCHEDULED_TRACE_METRICS_PROFILES_FILE`
+- `export` env moi trong shell khong lam process uvicorn dang chay nhan env moi
+- vi vay `reload_settings=true` khong thay the duoc file-based reload trong van hanh 24/24
+
+### 5.2.2. Import Grafana dashboard mau
+
+File JSON mau:
+
+```text
+/home/longth1/workspace/openstack/ovn_api/grafana/ovn-api-scheduled-trace-dashboard.json
+```
+
+Dashboard nay co:
+
+- phase duration chart
+- phase state timeline
+- last run status
+- last run age
+- run outcomes
+- profile info
+
+Dashboard drill-down rieng cho `logical_flow`:
+
+```text
+/home/longth1/workspace/openstack/ovn_api/grafana/ovn-api-logical-flow-drilldown-dashboard.json
+```
+
+Dashboard nay phu hop khi ban muon:
+
+- xem `logical_flow` dang cham o `NB`, `SB`, hay `OpenFlow`
+- doi chieu `nb_to_sb` va `sb_to_openflow`
+- canh bao som khi `ACL`/`logical_flow` lam tang `Logical_Flow` va backlog datapath
 
 ### 5.3. WebSocket push-based live stream
 

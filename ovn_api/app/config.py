@@ -28,6 +28,15 @@ class Settings:
     live_monitoring_interval_s: float
     live_monitoring_latency_interval_s: float
     live_monitoring_ws_queue_size: int
+    scheduled_trace_metrics_enabled: bool
+    scheduled_trace_metrics_interval_s: float
+    scheduled_trace_metrics_timeout_s: float
+    scheduled_trace_metrics_poll_interval_ms: int
+    scheduled_trace_metrics_default_bridge: str
+    scheduled_trace_metrics_default_logical_switch_target_name: str | None
+    scheduled_trace_metrics_default_logical_router_target_name: str | None
+    scheduled_trace_metrics_profiles_json: str | None
+    scheduled_trace_metrics_profiles_file: str | None
 
 
 @lru_cache(maxsize=1)
@@ -54,4 +63,18 @@ def get_settings() -> Settings:
         live_monitoring_interval_s=float(os.getenv("LIVE_MONITORING_INTERVAL_S", "5.0")),
         live_monitoring_latency_interval_s=float(os.getenv("LIVE_MONITORING_LATENCY_INTERVAL_S", "15.0")),
         live_monitoring_ws_queue_size=int(os.getenv("LIVE_MONITORING_WS_QUEUE_SIZE", "32")),
+        scheduled_trace_metrics_enabled=os.getenv("SCHEDULED_TRACE_METRICS_ENABLED", "false").lower()
+        in {"1", "true", "yes", "on"},
+        scheduled_trace_metrics_interval_s=float(os.getenv("SCHEDULED_TRACE_METRICS_INTERVAL_S", "60.0")),
+        scheduled_trace_metrics_timeout_s=float(os.getenv("SCHEDULED_TRACE_METRICS_TIMEOUT_S", "15.0")),
+        scheduled_trace_metrics_poll_interval_ms=int(os.getenv("SCHEDULED_TRACE_METRICS_POLL_INTERVAL_MS", "250")),
+        scheduled_trace_metrics_default_bridge=os.getenv("SCHEDULED_TRACE_METRICS_DEFAULT_BRIDGE", "br-int"),
+        scheduled_trace_metrics_default_logical_switch_target_name=(
+            os.getenv("SCHEDULED_TRACE_METRICS_DEFAULT_LOGICAL_SWITCH_TARGET_NAME") or None
+        ),
+        scheduled_trace_metrics_default_logical_router_target_name=(
+            os.getenv("SCHEDULED_TRACE_METRICS_DEFAULT_LOGICAL_ROUTER_TARGET_NAME") or None
+        ),
+        scheduled_trace_metrics_profiles_json=os.getenv("SCHEDULED_TRACE_METRICS_PROFILES_JSON") or None,
+        scheduled_trace_metrics_profiles_file=os.getenv("SCHEDULED_TRACE_METRICS_PROFILES_FILE") or None,
     )
