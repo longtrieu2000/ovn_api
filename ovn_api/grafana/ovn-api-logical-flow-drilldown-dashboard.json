@@ -221,24 +221,40 @@
       "fieldConfig": {
         "defaults": {
           "decimals": 0,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "disabled"
+                },
+                "1": {
+                  "text": "enabled_down"
+                },
+                "2": {
+                  "text": "enabled_up"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "yellow",
                 "value": 1
               },
               {
-                "color": "red",
-                "value": 3
+                "color": "green",
+                "value": 2
               }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         },
         "overrides": []
       },
@@ -269,13 +285,13 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(ovn_api_scheduled_trace_runs_total{requested_resource_type=\"logical_flow\",profile=~\"$profile\",result=~\"timeout|failed\"}[1h])) by (profile)",
+          "expr": "ovn_api_scheduled_trace_metrics_enabled + ovn_api_scheduled_trace_service_up",
           "instant": true,
-          "legendFormat": "{{profile}}",
+          "legendFormat": "runtime",
           "refId": "A"
         }
       ],
-      "title": "Timeout or Failed (1h)",
+      "title": "Scheduled Trace Runtime",
       "type": "stat"
     },
     {

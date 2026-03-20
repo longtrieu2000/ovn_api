@@ -68,10 +68,13 @@
               "type": "value",
               "options": {
                 "0": {
-                  "text": "down"
+                  "text": "disabled"
                 },
                 "1": {
-                  "text": "up"
+                  "text": "enabled_down"
+                },
+                "2": {
+                  "text": "enabled_up"
                 }
               }
             }
@@ -84,8 +87,12 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "yellow",
                 "value": 1
+              },
+              {
+                "color": "green",
+                "value": 2
               }
             ]
           },
@@ -120,13 +127,13 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ovn_api_scheduled_trace_service_up",
+          "expr": "ovn_api_scheduled_trace_metrics_enabled + ovn_api_scheduled_trace_service_up",
           "instant": true,
-          "legendFormat": "service",
+          "legendFormat": "runtime",
           "refId": "A"
         }
       ],
-      "title": "Scheduled Trace Service",
+      "title": "Scheduled Trace Runtime",
       "type": "stat"
     },
     {

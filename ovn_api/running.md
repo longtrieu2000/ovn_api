@@ -1,3 +1,8 @@
+export SCHEDULED_TRACE_METRICS_ENABLED=true
+export OVN_COMMAND_TRANSPORT=docker-exec          # nếu OVN chạy trong container như trong running.md
+export OVN_NB_CONTAINER=ovn_nb_db
+export OVN_SB_CONTAINER=ovn_sb_db
+export OVS_VSWITCHD_CONTAINER=openvswitch_vswitchd
 # OVN API Running Guide
 
 Tai lieu nay huong dan chay OVN API service va goi cac API canary trace de lay latency cho:
@@ -85,6 +90,12 @@ export SCHEDULED_TRACE_METRICS_DEFAULT_BRIDGE=br-int
 # Neu muon dung danh sach profile tu file:
 # export SCHEDULED_TRACE_METRICS_PROFILES_FILE=/home/longth1/workspace/openstack/ovn_api/examples/scheduled-trace-profiles.json
 ```
+
+Luu y:
+
+- `SCHEDULED_TRACE_METRICS_ENABLED=true` can phai co trong env cua process truoc khi app start
+- neu app da chay roi, chi `export` trong shell hien tai se khong tu dong bat worker ben trong uvicorn
+- trong van hanh that, nen cap env nay tu `systemd`, `docker compose`, hoac shell start app
 
 ## 4. Chay app
 

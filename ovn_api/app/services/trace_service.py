@@ -330,16 +330,48 @@ class CanaryTraceService:
                 note_parts.append(setup_note)
         elif resolved_type == "logical_switch":
             prepared.nb_table = "Logical_Switch"
-            prepared.context = {"switch_name": prepared.resource_name}
-            prepared.create_command = ["ls-add", prepared.resource_name]
+            companion_port_name = f"canary-ls-anchor-{probe_suffix}"
+            prepared.context = {
+                "switch_name": prepared.resource_name,
+                "companion_port_name": companion_port_name,
+            }
+            prepared.create_command = [
+                "ls-add",
+                prepared.resource_name,
+                "--",
+                "lsp-add",
+                prepared.resource_name,
+                companion_port_name,
+            ]
             prepared.cleanup_commands = [["--if-exists", "ls-del", prepared.resource_name]]
+            note_parts.append(
+                "A temporary logical switch port is created together with the canary switch to force southbound datapath realization."
+            )
             if request.resource_type == "network":
                 note_parts.append("In OVN, Neutron network maps most directly to Logical_Switch.")
         elif resolved_type == "logical_router":
             prepared.nb_table = "Logical_Router"
-            prepared.context = {"router_name": prepared.resource_name}
-            prepared.create_command = ["lr-add", prepared.resource_name]
+            companion_port_name = f"canary-lr-anchor-{probe_suffix}"
+            prepared.context = {
+                "router_name": prepared.resource_name,
+                "companion_port_name": companion_port_name,
+                "companion_port_mac": _probe_mac(probe_id),
+                "companion_port_network": router_network,
+            }
+            prepared.create_command = [
+                "lr-add",
+                prepared.resource_name,
+                "--",
+                "lrp-add",
+                prepared.resource_name,
+                companion_port_name,
+                prepared.context["companion_port_mac"],
+                prepared.context["companion_port_network"],
+            ]
             prepared.cleanup_commands = [["--if-exists", "lr-del", prepared.resource_name]]
+            note_parts.append(
+                "A temporary logical router port is created together with the canary router to force southbound datapath realization."
+            )
         elif resolved_type == "logical_switch_port":
             switch_ref, setup_note, setup_commands, cleanup_commands, setup_wait = self._resolve_switch_target(
                 request.target_name,
@@ -526,17 +558,39 @@ class CanaryTraceService:
 
                 time.sleep(prepared.poll_interval_s)
         except HTTPException as exc:
+            finished_perf = time.perf_counter()
             if nb_uuid is None:
-                nb_stage = CanaryProbeStage(status="failed", detail=str(exc.detail))
-                sb_stage = CanaryProbeStage(status="failed", detail="Probe stopped before SB polling.")
+                nb_stage = self._stage_with_elapsed_latency(
+                    CanaryProbeStage(status="failed", detail=str(exc.detail)),
+                    start_perf=start_perf,
+                    end_perf=finished_perf,
+                )
+                sb_stage = CanaryProbeStage(
+                    status="skipped",
+                    detail="SB stage was not evaluated because NB stage failed before commit was observed.",
+                )
                 if prepared.openflow_expected:
-                    openflow_stage = CanaryProbeStage(status="failed", detail="Probe stopped before OpenFlow polling.")
+                    openflow_stage = CanaryProbeStage(
+                        status="skipped",
+                        detail="OpenFlow stage was not evaluated because SB stage never started.",
+                    )
             elif sb_seen_at is None:
-                sb_stage = CanaryProbeStage(status="failed", detail=str(exc.detail))
+                sb_stage = self._stage_with_elapsed_latency(
+                    CanaryProbeStage(status="failed", detail=str(exc.detail)),
+                    start_perf=start_perf,
+                    end_perf=finished_perf,
+                )
                 if prepared.openflow_expected:
-                    openflow_stage = CanaryProbeStage(status="failed", detail="SB polling failed before OpenFlow.")
+                    openflow_stage = CanaryProbeStage(
+                        status="skipped",
+                        detail="OpenFlow stage was not evaluated because SB stage failed before realization.",
+                    )
             elif prepared.openflow_expected and of_seen_at is None:
-                openflow_stage = CanaryProbeStage(status="failed", detail=str(exc.detail))
+                openflow_stage = self._stage_with_elapsed_latency(
+                    CanaryProbeStage(status="failed", detail=str(exc.detail)),
+                    start_perf=start_perf,
+                    end_perf=finished_perf,
+                )
             return CanaryProbeResult(
                 probe_id=prepared.probe_id,
                 requested_resource_type=prepared.requested_resource_type,
@@ -553,9 +607,51 @@ class CanaryTraceService:
                 sb_realized=sb_stage,
                 openflow_realized=openflow_stage,
                 cleanup=CanaryProbeStage(status="skipped", detail="Cleanup pending."),
-                nb_to_sb_latency_ms=self._delta_ms(nb_seen_at, sb_seen_at),
-                sb_to_openflow_latency_ms=self._delta_ms(sb_seen_at, of_seen_at),
-                total_latency_ms=self._total_latency_ms(prepared.openflow_expected, sb_seen_at, of_seen_at, start_perf),
+                nb_to_sb_latency_ms=self._phase_delta_ms(nb_stage, sb_stage),
+                sb_to_openflow_latency_ms=self._phase_delta_ms(sb_stage, openflow_stage),
+                total_latency_ms=self._total_latency_ms(
+                    openflow_expected=prepared.openflow_expected,
+                    nb_stage=nb_stage,
+                    sb_stage=sb_stage,
+                    openflow_stage=openflow_stage,
+                ),
+            )
+
+        finished_perf = time.perf_counter()
+        if nb_uuid is None:
+            nb_stage = self._stage_with_elapsed_latency(
+                nb_stage,
+                start_perf=start_perf,
+                end_perf=finished_perf,
+                detail="Timed out waiting for the resource to appear in OVN NB.",
+            )
+            sb_stage = CanaryProbeStage(
+                status="skipped",
+                detail="SB stage was not evaluated because NB commit was not observed.",
+            )
+            if prepared.openflow_expected:
+                openflow_stage = CanaryProbeStage(
+                    status="skipped",
+                    detail="OpenFlow stage was not evaluated because SB stage never started.",
+                )
+        elif sb_seen_at is None:
+            sb_stage = self._stage_with_elapsed_latency(
+                sb_stage,
+                start_perf=start_perf,
+                end_perf=finished_perf,
+                detail="Timed out waiting for the resource to appear in OVN SB.",
+            )
+            if prepared.openflow_expected:
+                openflow_stage = CanaryProbeStage(
+                    status="skipped",
+                    detail="OpenFlow stage was not evaluated because SB stage did not realize.",
+                )
+        elif prepared.openflow_expected and of_seen_at is None:
+            openflow_stage = self._stage_with_elapsed_latency(
+                openflow_stage,
+                start_perf=start_perf,
+                end_perf=finished_perf,
+                detail=f"Timed out waiting for matching OpenFlow on bridge {prepared.bridge!r}.",
             )
 
         return CanaryProbeResult(
@@ -574,9 +670,14 @@ class CanaryTraceService:
             sb_realized=sb_stage,
             openflow_realized=openflow_stage,
             cleanup=CanaryProbeStage(status="skipped", detail="Cleanup pending."),
-            nb_to_sb_latency_ms=self._delta_ms(nb_seen_at, sb_seen_at),
-            sb_to_openflow_latency_ms=self._delta_ms(sb_seen_at, of_seen_at),
-            total_latency_ms=self._total_latency_ms(prepared.openflow_expected, sb_seen_at, of_seen_at, start_perf),
+            nb_to_sb_latency_ms=self._phase_delta_ms(nb_stage, sb_stage),
+            sb_to_openflow_latency_ms=self._phase_delta_ms(sb_stage, openflow_stage),
+            total_latency_ms=self._total_latency_ms(
+                openflow_expected=prepared.openflow_expected,
+                nb_stage=nb_stage,
+                sb_stage=sb_stage,
+                openflow_stage=openflow_stage,
+            ),
         )
 
     def _setup_failed_result(self, prepared: PreparedProbe, detail: str) -> CanaryProbeResult:
@@ -895,18 +996,39 @@ class CanaryTraceService:
             return "partial_success"
         return "success"
 
-    def _delta_ms(self, start: float | None, end: float | None) -> float | None:
-        if start is None or end is None:
+    def _stage_with_elapsed_latency(
+        self,
+        stage: CanaryProbeStage,
+        *,
+        start_perf: float,
+        end_perf: float,
+        detail: str | None = None,
+    ) -> CanaryProbeStage:
+        return stage.model_copy(
+            update={
+                "latency_ms": stage.latency_ms if stage.latency_ms is not None else _elapsed_ms(start_perf, end_perf),
+                "detail": detail or stage.detail,
+            }
+        )
+
+    def _phase_delta_ms(self, previous_stage: CanaryProbeStage, current_stage: CanaryProbeStage) -> float | None:
+        if previous_stage.status != "observed":
             return None
-        return round((end - start) * 1000, 3)
+        if previous_stage.latency_ms is None or current_stage.latency_ms is None:
+            return None
+        return round(max(current_stage.latency_ms - previous_stage.latency_ms, 0.0), 3)
 
     def _total_latency_ms(
         self,
+        *,
         openflow_expected: bool,
-        sb_seen_at: float | None,
-        of_seen_at: float | None,
-        start_perf: float,
+        nb_stage: CanaryProbeStage,
+        sb_stage: CanaryProbeStage,
+        openflow_stage: CanaryProbeStage,
     ) -> float | None:
         if openflow_expected:
-            return _elapsed_ms(start_perf, of_seen_at) if of_seen_at is not None else None
-        return _elapsed_ms(start_perf, sb_seen_at) if sb_seen_at is not None else None
+            if openflow_stage.status != "skipped" and openflow_stage.latency_ms is not None:
+                return openflow_stage.latency_ms
+        if sb_stage.status != "skipped" and sb_stage.latency_ms is not None:
+            return sb_stage.latency_ms
+        return nb_stage.latency_ms
