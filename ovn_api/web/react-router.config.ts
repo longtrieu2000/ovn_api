@@ -4,5 +4,4 @@ export default {
 	appDirectory: './src/app',
 	serverBuildFile: 'assets/server-build.js',
 	ssr: true,
-	prerender: ['/*?'],
 } satisfies Config;
