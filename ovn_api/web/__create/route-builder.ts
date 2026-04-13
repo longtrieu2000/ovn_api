@@ -20,6 +20,10 @@ async function findRouteFiles(dir: string): Promise<string[]> {
   let routes: string[] = [];
 
   for (const file of files) {
+    if (!import.meta.env.DEV && file === '__create') {
+      continue;
+    }
+
     try {
       const filePath = join(dir, file);
       const statResult = await stat(filePath);

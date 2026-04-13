@@ -4,7 +4,7 @@ services:
   ovn-dashboard:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: dockerfile
       network: host
     container_name: ovn_dashboard_web
     ports:
