@@ -178,6 +178,7 @@ class CpuMonitorTests(unittest.TestCase):
 
             service.collect_now()
             snapshot = service.get_snapshot(threads_per_component=3, top_threads=10)
+            payload = service.render_prometheus_text()
 
             components = {component.component: component for component in snapshot.components}
             self.assertIn("ovs-vswitchd", components)
@@ -204,6 +205,11 @@ class CpuMonitorTests(unittest.TestCase):
             spikes = service.find_spikes(component="ovn-sb-db", threshold_pct=0.1, limit=5)
             self.assertEqual(len(spikes), 1)
             self.assertEqual(spikes[0].component, "ovn-sb-db")
+
+            self.assertIn("ovn_cpu_component_cpu_percent", payload)
+            self.assertIn('component="ovn-sb-db"', payload)
+            self.assertIn('thread_group="handler"', payload)
+            self.assertIn('name="NET_RX"', payload)
 
     def _write_process(
         self,

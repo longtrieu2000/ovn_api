@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  ovn_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+    container_name: ovn_api_service
+    ports:
+      - "8001:8001"
+    environment:
+      - OVN_COMMAND_TRANSPORT=docker-exec
+      - TRACE_STORE_URL=sqlite:///./data/traces.db
+      - OVN_NB_CONNECTION=tcp:127.0.0.1:6641
+      - OVN_SB_CONNECTION=tcp:127.0.0.1:6642
+    volumes:
+      - .:/app/ovn_api
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: uvicorn ovn_api.app.main:app --host 0.0.0.0 --port 8001 --reload
+    restart: unless-stopped
+    #    networks:
+    #      - ovn_network
+    network_mode: "host"
+
+#networks:
+#  ovn_network:
+#    driver: bridge

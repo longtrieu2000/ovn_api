@@ -1,0 +1,19 @@
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:18-alpine AS runner
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/public ./public
+RUN npm install -g serve
+
+EXPOSE 3039
+ENV NODE_ENV=production
+ENV PORT=3039
+CMD ["serve", "-s", "dist", "-l", "3039"]

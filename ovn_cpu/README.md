@@ -39,6 +39,8 @@ export OVN_CPU_PROC_ROOT=/host/proc
 ## Endpoint chính
 
 - `GET /health`
+- `GET /metrics`
+- `GET /monitoring/prometheus`
 - `GET /api/v1/cpu/snapshot`
 - `GET /api/v1/cpu/history`
 - `GET /api/v1/cpu/threads?component=ovs-vswitchd&thread_group=handler`
@@ -50,6 +52,7 @@ Ví dụ:
 curl -s http://127.0.0.1:8002/api/v1/cpu/snapshot | jq '.components'
 curl -s 'http://127.0.0.1:8002/api/v1/cpu/threads?component=ovs-vswitchd&thread_group=revalidator' | jq
 curl -s 'http://127.0.0.1:8002/api/v1/cpu/spikes?component=ovn-sb-db&threshold_pct=20' | jq
+curl -s http://127.0.0.1:8002/metrics
 ```
 
 ## Biến môi trường
@@ -63,6 +66,30 @@ curl -s 'http://127.0.0.1:8002/api/v1/cpu/spikes?component=ovn-sb-db&threshold_p
 - `OVN_CPU_THREADS_PER_COMPONENT` mặc định `5`
 - `OVN_CPU_ENABLE_KERNEL_THREADS` mặc định `true`
 - `OVN_CPU_SOFTIRQS` mặc định `NET_RX,NET_TX,RCU,TIMER,SCHED,HRTIMER`
+
+## Prometheus và Grafana
+
+Prometheus scrape endpoint:
+
+```yaml
+scrape_configs:
+  - job_name: ovn_cpu
+    static_configs:
+      - targets:
+          - 127.0.0.1:8002
+```
+
+Dashboard Grafana để import:
+
+- [`ovn_cpu/grafana/ovn-cpu-forensics-dashboard.json`](/home/longth1/workspace/openstack/ovn_cpu/grafana/ovn-cpu-forensics-dashboard.json)
+
+Dashboard này có:
+
+- Overview CPU cho host, `ovn-sb-db`, `ovs-vswitchd`
+- Drilldown theo `component`, `pid`, `thread_group`
+- Panel riêng cho `ovn-sb-db` để soi spike lúc restart
+- Panel riêng cho `handler` / `revalidator` / `pmd` của `ovs-vswitchd`
+- SoftIRQ delta và kernel datapath hot threads để đối chiếu userspace với kernel-side
 
 ## Test nhanh
 

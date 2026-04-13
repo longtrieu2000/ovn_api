@@ -228,6 +228,86 @@ class CpuMonitorService:
             "last_generated_at": snapshot.generated_at.isoformat() if snapshot else None,
         }
 
+    def render_prometheus_text(self) -> str:
+        with self._lock:
+            snapshot = self._snapshot
+            history_size = len(self._history)
+            running = self._thread is not None and self._thread.is_alive()
+            last_error = self._last_error
+
+        now = datetime.now(timezone.utc)
+        lines: list[str] = []
+        self._append_metric(lines, "ovn_cpu_exporter_up", 1)
+        self._append_metric(lines, "ovn_cpu_collector_running", 1 if running else 0)
+        self._append_metric(lines, "ovn_cpu_snapshot_ready", 1 if snapshot is not None else 0)
+        self._append_metric(lines, "ovn_cpu_history_points", history_size)
+        self._append_metric(lines, "ovn_cpu_cpu_count", self.cpu_count)
+        self._append_metric(lines, "ovn_cpu_sample_interval_seconds", self.interval_s)
+        self._append_metric(lines, "ovn_cpu_last_error", 1 if last_error else 0)
+
+        if snapshot is None:
+            return "".join(lines)
+
+        self._append_metric(lines, "ovn_cpu_snapshot_warmup", 1 if snapshot.warmup else 0)
+        self._append_metric(lines, "ovn_cpu_snapshot_elapsed_seconds", round(snapshot.elapsed_s, 3))
+        self._append_metric(
+            lines,
+            "ovn_cpu_snapshot_age_seconds",
+            max(0.0, (now - snapshot.generated_at).total_seconds()),
+        )
+        self._append_optional_metric(lines, "ovn_cpu_host_cpu_percent", snapshot.host_cpu_pct)
+
+        for window, value in zip(("1m", "5m", "15m"), snapshot.loadavg):
+            self._append_metric(lines, "ovn_cpu_loadavg", round(value, 3), labels={"window": window})
+
+        for process in snapshot.processes:
+            labels = {
+                "component": process.component,
+                "category": process.category,
+                "label": process.label,
+                "pid": str(process.pid),
+                "process_name": process.process_name,
+            }
+            self._append_metric(lines, "ovn_cpu_component_present", 1, labels=labels)
+            self._append_metric(lines, "ovn_cpu_component_threads", process.thread_count, labels=labels)
+            self._append_usage_metrics(lines, "ovn_cpu_component_cpu_percent", process.cpu, labels=labels)
+
+        for group in snapshot.groups:
+            labels = {
+                "component": group.component,
+                "category": group.category,
+                "thread_group": group.thread_group,
+            }
+            self._append_metric(lines, "ovn_cpu_thread_group_threads", group.threads, labels=labels)
+            self._append_usage_metrics(lines, "ovn_cpu_thread_group_cpu_percent", group.cpu, labels=labels)
+
+        for thread in snapshot.threads:
+            labels = {
+                "component": thread.process_component,
+                "category": thread.process_category,
+                "label": thread.process_label,
+                "pid": str(thread.pid),
+                "process_name": thread.process_name,
+                "tid": str(thread.tid),
+                "thread_group": thread.thread_group,
+                "thread_name": thread.thread_name,
+                "state": thread.state,
+            }
+            self._append_metric(lines, "ovn_cpu_thread_present", 1, labels=labels)
+            self._append_usage_metrics(lines, "ovn_cpu_thread_cpu_percent", thread.cpu, labels=labels)
+
+        for softirq in snapshot.softirqs:
+            self._append_metric(lines, "ovn_cpu_softirq_delta_total", softirq.total_delta, labels={"name": softirq.name})
+            for cpu_index, delta in enumerate(softirq.per_cpu_delta):
+                self._append_metric(
+                    lines,
+                    "ovn_cpu_softirq_delta_per_cpu",
+                    delta,
+                    labels={"name": softirq.name, "cpu": str(cpu_index)},
+                )
+
+        return "".join(lines)
+
     def _run(self) -> None:
         while not self._stop_event.wait(self.interval_s):
             self._refresh_safely()
@@ -650,6 +730,23 @@ class CpuMonitorService:
             system_pct=round(usage.system_pct, 3),
         )
 
+    def _append_usage_metrics(
+        self,
+        lines: list[str],
+        name: str,
+        usage: Usage,
+        *,
+        labels: dict[str, str],
+    ) -> None:
+        for mode, value in (
+            ("total", usage.total_pct),
+            ("user", usage.user_pct),
+            ("system", usage.system_pct),
+        ):
+            metric_labels = dict(labels)
+            metric_labels["mode"] = mode
+            self._append_metric(lines, name, round(value, 3), labels=metric_labels)
+
     def _require_snapshot(self) -> SnapshotState:
         with self._lock:
             snapshot = self._snapshot
@@ -699,6 +796,39 @@ class CpuMonitorService:
             for group in groups
             if group.category != "kernel" or group.cpu.total_pct > 0.0
         ]
+
+    def _append_metric(
+        self,
+        lines: list[str],
+        name: str,
+        value: int | float,
+        *,
+        labels: dict[str, str] | None = None,
+    ) -> None:
+        if labels:
+            rendered_labels = ",".join(
+                f'{key}="{self._escape_label_value(raw_value)}"'
+                for key, raw_value in sorted(labels.items())
+            )
+            lines.append(f"{name}{{{rendered_labels}}} {value}\n")
+            return
+        lines.append(f"{name} {value}\n")
+
+    def _append_optional_metric(
+        self,
+        lines: list[str],
+        name: str,
+        value: int | float | None,
+        *,
+        labels: dict[str, str] | None = None,
+    ) -> None:
+        if value is None:
+            return
+        self._append_metric(lines, name, value, labels=labels)
+
+    @staticmethod
+    def _escape_label_value(raw_value: object) -> str:
+        return str(raw_value).replace("\\", "\\\\").replace('"', '\\"')
 
 
 @lru_cache(maxsize=1)

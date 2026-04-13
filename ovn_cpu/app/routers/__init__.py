@@ -1,3 +1,3 @@
-from . import cpu, health
+from . import cpu, health, monitoring
 
-__all__ = ["cpu", "health"]
+__all__ = ["cpu", "health", "monitoring"]
