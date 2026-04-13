@@ -11,7 +11,6 @@ import { cors } from 'hono/cors';
 import { proxy } from 'hono/proxy';
 import { bodyLimit } from 'hono/body-limit';
 import { requestId } from 'hono/request-id';
-import { createHonoServer } from 'react-router-hono-server/node';
 import { serializeError } from 'serialize-error';
 import ws from 'ws';
 import NeonAdapter from './adapter';
@@ -42,10 +41,15 @@ const adapter = NeonAdapter(pool);
 
 const app = new Hono();
 const DEFAULT_PORT = 3089;
+const SKIP_SERVER_LISTEN_ENV = 'OVN_WEB_SKIP_SERVER_LISTEN';
 
 function resolveServerPort() {
   const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
   return Number.isFinite(parsedPort) ? parsedPort : DEFAULT_PORT;
+}
+
+function shouldSkipServerListen() {
+  return process.env[SKIP_SERVER_LISTEN_ENV] === '1';
 }
 
 app.use('*', requestId());
@@ -299,8 +303,31 @@ app.use('/api/auth/*', async (c, next) => {
 });
 app.route(API_BASENAME, api);
 
-export default await createHonoServer({
-  app,
-  defaultLogger: false,
-  port: resolveServerPort(),
-});
+async function createServer() {
+  const skipServerListen = shouldSkipServerListen();
+  const previousNodeEnv = process.env.NODE_ENV;
+
+  if (skipServerListen) {
+    process.env.NODE_ENV = 'development';
+  }
+
+  try {
+    const { createHonoServer } = await import('react-router-hono-server/node');
+
+    return await createHonoServer({
+      app,
+      defaultLogger: false,
+      port: resolveServerPort(),
+    });
+  } finally {
+    if (skipServerListen) {
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+    }
+  }
+}
+
+export default await createServer();

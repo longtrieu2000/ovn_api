@@ -1,6 +1,6 @@
 FROM node:20-bookworm AS builder
 WORKDIR /app
-ENV PORT=0
+ENV OVN_WEB_SKIP_SERVER_LISTEN=1
 
 RUN apt-get update && apt-get install -y \
 python3 make g++ \
