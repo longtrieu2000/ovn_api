@@ -8,14 +8,37 @@ import updatedFetch from '../src/__create/fetch';
 const API_BASENAME = '/api';
 const api = new Hono();
 
-// Get current directory
-const __dirname = join(fileURLToPath(new URL('.', import.meta.url)), '../src/app/api');
+const currentDir = fileURLToPath(new URL('.', import.meta.url));
+const apiDirCandidates = [
+  join(currentDir, '../src/app/api'),
+  join(currentDir, '../../../src/app/api'),
+  join(process.cwd(), 'build/server/src/app/api'),
+  join(process.cwd(), 'src/app/api'),
+];
+
 if (globalThis.fetch) {
   globalThis.fetch = updatedFetch;
 }
 
+async function resolveApiDir(): Promise<string> {
+  for (const candidate of apiDirCandidates) {
+    try {
+      const statResult = await stat(candidate);
+      if (statResult.isDirectory()) {
+        return candidate;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  throw new Error(
+    `Unable to locate API routes directory. Checked: ${apiDirCandidates.join(', ')}`
+  );
+}
+
 // Recursively find all route.js files
-async function findRouteFiles(dir: string): Promise<string[]> {
+async function findRouteFiles(dir: string, rootDir = dir): Promise<string[]> {
   const files = await readdir(dir);
   let routes: string[] = [];
 
@@ -29,10 +52,10 @@ async function findRouteFiles(dir: string): Promise<string[]> {
       const statResult = await stat(filePath);
 
       if (statResult.isDirectory()) {
-        routes = routes.concat(await findRouteFiles(filePath));
+        routes = routes.concat(await findRouteFiles(filePath, rootDir));
       } else if (file === 'route.js') {
         // Handle root route.js specially
-        if (filePath === join(__dirname, 'route.js')) {
+        if (filePath === join(rootDir, 'route.js')) {
           routes.unshift(filePath); // Add to beginning of array
         } else {
           routes.push(filePath);
@@ -47,8 +70,8 @@ async function findRouteFiles(dir: string): Promise<string[]> {
 }
 
 // Helper function to transform file path to Hono route path
-function getHonoPath(routeFile: string): { name: string; pattern: string }[] {
-  const relativePath = routeFile.replace(__dirname, '');
+function getHonoPath(routeFile: string, apiDir: string): { name: string; pattern: string }[] {
+  const relativePath = routeFile.replace(apiDir, '');
   const parts = relativePath.split('/').filter(Boolean);
   const routeParts = parts.slice(0, -1); // Remove 'route.js'
   if (routeParts.length === 0) {
@@ -69,8 +92,9 @@ function getHonoPath(routeFile: string): { name: string; pattern: string }[] {
 
 // Import and register all routes
 async function registerRoutes() {
+  const apiDir = await resolveApiDir();
   const routeFiles = (
-    await findRouteFiles(__dirname).catch((error) => {
+    await findRouteFiles(apiDir).catch((error) => {
       console.error('Error finding route files:', error);
       return [];
     })
@@ -91,7 +115,7 @@ async function registerRoutes() {
       for (const method of methods) {
         try {
           if (route[method]) {
-            const parts = getHonoPath(routeFile);
+            const parts = getHonoPath(routeFile, apiDir);
             const honoPath = `/${parts.map(({ pattern }) => pattern).join('/')}`;
             const handler: Handler = async (c) => {
               const params = c.req.param();

@@ -8,10 +8,10 @@ services:
       network: host
     container_name: ovn_dashboard_web
     ports:
-      - "3039:3039"
+      - "3089:3089"
     environment:
       - NODE_ENV=production
-      - PORT=3039
+      - PORT=3089
       - NEXT_PUBLIC_API_URL=http://localhost:8001
     restart: unless-stopped
     #    networks:

@@ -41,6 +41,12 @@ const pool = new Pool({
 const adapter = NeonAdapter(pool);
 
 const app = new Hono();
+const DEFAULT_PORT = 3089;
+
+function resolveServerPort() {
+  const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
+  return Number.isFinite(parsedPort) ? parsedPort : DEFAULT_PORT;
+}
 
 app.use('*', requestId());
 
@@ -296,4 +302,5 @@ app.route(API_BASENAME, api);
 export default await createHonoServer({
   app,
   defaultLogger: false,
+  port: resolveServerPort(),
 });

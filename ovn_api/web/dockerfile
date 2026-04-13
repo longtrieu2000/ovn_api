@@ -1,5 +1,6 @@
 FROM node:20-bookworm AS builder
 WORKDIR /app
+ENV PORT=0
 
 RUN apt-get update && apt-get install -y \
 python3 make g++ \
@@ -19,11 +20,11 @@ COPY package*.json ./
 RUN npm install --omit=dev --legacy-peer-deps
 
 COPY --from=builder /app/build ./build
-COPY --from=builder /app/src ./build/server/src
+COPY --from=builder /app/src ./src
 
 ENV NODE_ENV=production
-ENV PORT=3039
+ENV PORT=3089
 
-EXPOSE 3039
+EXPOSE 3089
 
 CMD ["node", "build/server/index.js"]
