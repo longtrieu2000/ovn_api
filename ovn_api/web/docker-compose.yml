@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: dockerfile
+      network: host
     container_name: ovn_dashboard_web
     ports:
       - "3089:3089"
@@ -11,3 +12,4 @@ services:
       - PORT=3089
       - NEXT_PUBLIC_API_URL=http://localhost:8001
     restart: unless-stopped
+    network_mode: "host"
