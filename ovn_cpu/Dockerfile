@@ -2,6 +2,10 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
+ENV PYTHONUNBUFFERED=1 \
+    OVN_CPU_HOST=0.0.0.0 \
+    OVN_CPU_PORT=8002
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     procps \
@@ -21,5 +25,5 @@ RUN mkdir -p /app/data
 # Expose metrics port
 EXPOSE 8002
 
-# Run the CPU monitoring agent
-CMD ["python", "-m", "ovn_cpu.main"]
+# Run the FastAPI CPU monitor service from /app/app.
+CMD ["sh", "-c", "exec python -m uvicorn app.main:app --host ${OVN_CPU_HOST} --port ${OVN_CPU_PORT}"]

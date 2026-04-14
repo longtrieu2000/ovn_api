@@ -1,24 +1,23 @@
-version: '3.8'
-
 services:
   # OVN CPU Monitoring Agent
   ovn-cpu-monitor:
     build:
-      context: ./ovn_cpu
+      context: .
       dockerfile: Dockerfile
       network: host
     container_name: ovn_cpu_monitor
     ports:
       - "8002:8002"
     environment:
-      - MONITOR_INTERVAL=5
-      - OVN_PROCESSES=ovn-northd,ovn-controller,ovsdb-server
-      - METRICS_PORT=8002
-      - LOG_LEVEL=INFO
+      - OVN_CPU_HOST=0.0.0.0
+      - OVN_CPU_PORT=8002
+      - OVN_CPU_PROC_ROOT=/host/proc
+      - OVN_CPU_SAMPLE_INTERVAL_S=5
+      - OVN_CPU_PROCESS_NAMES=ovs-vswitchd,ovsdb-server,ovn-controller,ovn-controller-vtep,ovn-northd
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - ./ovn_cpu/data:/app/data
+      - ./data:/app/data
     privileged: true
     network_mode: "host"
     restart: unless-stopped
