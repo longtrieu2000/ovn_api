@@ -1,6 +1,8 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .middleware.api_metrics import ApiMetricsMiddleware
 from .routers import chassis, flows, health, metrics, monitoring, topology, traces
@@ -28,6 +30,27 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="OVN Dev API", version="0.3.0", lifespan=lifespan)
     app.add_middleware(ApiMetricsMiddleware)
+    # Browsers block cross-origin fetch from the web UI (e.g. :3089) to the API (:8001)
+    # unless CORS allows the UI origin. Add last so this runs first on each request.
+    _cors = os.getenv("OVN_API_CORS_ORIGINS", "").strip()
+    if _cors:
+        _origins = [o.strip() for o in _cors.split(",") if o.strip()]
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        # Dev default: any http(s) origin on localhost / 127.0.0.1 with a port
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.include_router(health.router)
     app.include_router(flows.router, prefix="/api/v1", tags=["flows"])
     app.include_router(topology.router, prefix="/api/v1", tags=["topology"])
