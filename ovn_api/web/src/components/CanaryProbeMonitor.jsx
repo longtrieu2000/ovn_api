@@ -20,10 +20,10 @@ export default function CanaryProbeMonitor({ apiUrl }) {
 
   const fetchProbes = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/canary/probes`);
+      const response = await fetch(`${apiUrl}/api/v1/traces/canary/runs?limit=20`);
       if (response.ok) {
         const data = await response.json();
-        setProbes(data.probes || []);
+        setProbes(Array.isArray(data) ? data : []);
       }
       setLoading(false);
     } catch (error) {
@@ -34,10 +34,19 @@ export default function CanaryProbeMonitor({ apiUrl }) {
 
   const fetchLatestTrace = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/canary/latest-trace`);
+      const response = await fetch(`${apiUrl}/api/v1/traces/canary/runs?limit=1`);
       if (response.ok) {
         const data = await response.json();
-        setLatestTrace(data);
+        if (Array.isArray(data) && data.length > 0) {
+          const detailResponse = await fetch(
+            `${apiUrl}/api/v1/traces/canary/runs/${data[0].probe_id}`,
+          );
+          if (detailResponse.ok) {
+            setLatestTrace(await detailResponse.json());
+          }
+        } else {
+          setLatestTrace(null);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch latest trace:", error);
@@ -46,8 +55,15 @@ export default function CanaryProbeMonitor({ apiUrl }) {
 
   const triggerProbe = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/canary/trigger`, {
+      const response = await fetch(`${apiUrl}/api/v1/traces/canary/runs`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resource_type: "logical_switch",
+          timeout_s: 15,
+          poll_interval_ms: 250,
+          bridge: "br-int",
+        }),
       });
       if (response.ok) {
         fetchProbes();
@@ -96,7 +112,7 @@ export default function CanaryProbeMonitor({ apiUrl }) {
                 Latest Trace Results
               </h3>
               <p className="text-xs text-gray-500 mt-1">
-                Probe ID: {latestTrace.probe_id || "N/A"}
+                Probe ID: {latestTrace?.probe_id || "N/A"}
               </p>
             </div>
             <span className="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full px-3 py-1 text-xs text-gray-700">
@@ -108,17 +124,17 @@ export default function CanaryProbeMonitor({ apiUrl }) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <LatencyMetric
               label="NB → SB Latency"
-              value={`${latestTrace.nb_to_sb_ms || 25}ms`}
+              value={formatLatency(latestTrace?.result?.nb_to_sb_latency_ms)}
               sublabel="northd compilation"
             />
             <LatencyMetric
               label="SB → OpenFlow Latency"
-              value={`${latestTrace.sb_to_of_ms || 18}ms`}
+              value={formatLatency(latestTrace?.result?.sb_to_openflow_latency_ms)}
               sublabel="controller realization"
             />
             <LatencyMetric
               label="Total E2E Latency"
-              value={`${latestTrace.total_ms || 43}ms`}
+              value={formatLatency(latestTrace?.result?.total_latency_ms)}
               sublabel="intent to datapath"
             />
           </div>
@@ -196,26 +212,27 @@ function LatencyMetric({ label, value, sublabel }) {
 }
 
 function ProbeItem({ probe }) {
+  const updatedAt = probe.updated_at || probe.started_at || probe.queued_at;
   return (
     <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
       <div className="flex items-center gap-3">
         <Activity size={16} className="text-blue-600" />
         <div>
           <div className="text-sm font-medium text-gray-900">
-            {probe.name || "Canary Probe"}
+            {probe.resource_name || "Canary Probe"}
           </div>
           <div className="text-xs text-gray-500">
-            ID: {probe.id || "unknown"}
+            ID: {probe.probe_id || "unknown"}
           </div>
         </div>
       </div>
       <div className="flex items-center gap-3">
         <span className="text-xs text-gray-500">
-          {probe.timestamp || "Just now"}
+          {updatedAt ? new Date(updatedAt).toLocaleString() : "Just now"}
         </span>
         <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-600 rounded-full px-3 py-1 text-xs font-medium">
           <Clock size={12} />
-          {probe.latency || "42ms"}
+          {probe.status || "queued"}
         </span>
       </div>
     </div>
@@ -262,4 +279,11 @@ function PipelineArrow() {
       </svg>
     </div>
   );
+}
+
+function formatLatency(value) {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return `${Math.round(value)}ms`;
 }

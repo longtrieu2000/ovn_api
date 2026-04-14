@@ -254,10 +254,30 @@ function OverviewTab({ apiUrl, healthStatus }) {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/stats`);
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
+      const [capacityRes, runRes, flowRes] = await Promise.all([
+        fetch(`${apiUrl}/api/v1/metrics/capacity`),
+        fetch(`${apiUrl}/api/v1/traces/canary/runs?limit=20`),
+        fetch(`${apiUrl}/api/v1/flows/openflow`),
+      ]);
+
+      if (capacityRes.ok && runRes.ok && flowRes.ok) {
+        const [capacity, runs, openflow] = await Promise.all([
+          capacityRes.json(),
+          runRes.json(),
+          flowRes.json(),
+        ]);
+
+        const activeProbes = Array.isArray(runs)
+          ? runs.filter((run) => run.status === "queued" || run.status === "running")
+              .length
+          : 0;
+        setStats({
+          control_plane_latency: "n/a",
+          active_probes: activeProbes,
+          db_connections: "NB + SB",
+          flow_count: openflow?.flow_count ?? 0,
+          capacity,
+        });
       }
     } catch (error) {
       console.error("Failed to fetch stats:", error);

@@ -17,10 +17,15 @@ export default function OpenFlowMonitor({ apiUrl }) {
 
   const fetchFlows = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/ovs/flows`);
+      const response = await fetch(`${apiUrl}/api/v1/flows/openflow`);
       if (response.ok) {
         const data = await response.json();
-        setFlows(data.flows || mockFlows);
+        const parsedFlows = Array.isArray(data.lines)
+          ? data.lines
+              .map((line) => parseOpenFlowLine(line))
+              .filter((flow) => flow !== null)
+          : [];
+        setFlows(parsedFlows.length > 0 ? parsedFlows : mockFlows);
       }
       setLoading(false);
     } catch (error) {
@@ -314,3 +319,27 @@ const mockFlows = [
     packets: 234,
   },
 ];
+
+function parseOpenFlowLine(line) {
+  if (!line || typeof line !== "string") {
+    return null;
+  }
+
+  const tableMatch = line.match(/table=(\d+)/);
+  const priorityMatch = line.match(/priority=(\d+)/);
+  const cookieMatch = line.match(/cookie=([^, ]+)/);
+  const packetsMatch = line.match(/n_packets=(\d+)/);
+  const actionsMatch = line.match(/actions=(.+)$/);
+
+  const withoutPrefix = line.replace(/^.*priority=\d+,?/, "");
+  const matchExpression = withoutPrefix.split("actions=")[0]?.replace(/,$/, "") || "";
+
+  return {
+    table: tableMatch ? Number(tableMatch[1]) : 0,
+    priority: priorityMatch ? Number(priorityMatch[1]) : 0,
+    cookie: cookieMatch ? cookieMatch[1] : "0x0",
+    match: matchExpression.trim() || "n/a",
+    actions: actionsMatch ? actionsMatch[1].trim() : "drop",
+    packets: packetsMatch ? Number(packetsMatch[1]) : 0,
+  };
+}

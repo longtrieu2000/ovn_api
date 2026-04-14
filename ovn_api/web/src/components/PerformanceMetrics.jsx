@@ -127,23 +127,37 @@ export default function PerformanceMetrics({ apiUrl }) {
   const fetchMetrics = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `${apiUrl}/api/metrics/history?range=${timeRange}`,
-      );
-      if (response.ok) {
-        const data = await response.json();
-        if (data.latency && data.latency.length > 0) {
-          setLatencyData(data.latency);
-        } else {
-          setLatencyData(generateMockLatencyData(timeRange));
-        }
-        if (data.cpu && data.cpu.length > 0) {
-          setCpuData(data.cpu);
-        } else {
-          setCpuData(generateMockCpuData(timeRange));
-        }
+      const [latencyResponse, monitoringResponse] = await Promise.all([
+        fetch(`${apiUrl}/api/v1/metrics/latency`),
+        fetch(`${apiUrl}/api/v1/monitoring/live`),
+      ]);
+
+      if (latencyResponse.ok && monitoringResponse.ok) {
+        const latencyPayload = await latencyResponse.json();
+        const monitoringPayload = await monitoringResponse.json();
+
+        const nowLabel = new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        });
+
+        setLatencyData([
+          {
+            time: nowLabel,
+            nb_to_sb: Math.round(latencyPayload?.ovsdb?.nb_transaction_latency_ms || 0),
+            sb_to_of: Math.round(latencyPayload?.openflow_installation?.latency_ms || 0),
+          },
+        ]);
+
+        setCpuData([
+          {
+            time: nowLabel,
+            northd: Number(monitoringPayload?.api_runtime?.http_requests_in_flight || 0),
+            controller: Number(monitoringPayload?.trace_runtime?.queue_depth || 0),
+          },
+        ]);
       } else {
-        // Generate mock data based on current timeRange
         setLatencyData(generateMockLatencyData(timeRange));
         setCpuData(generateMockCpuData(timeRange));
       }

@@ -5,7 +5,12 @@ import { Database, RefreshCw, Search } from "lucide-react";
 
 export default function DatabaseStateView({ apiUrl }) {
   const [activeDb, setActiveDb] = useState("northbound");
-  const [tables, setTables] = useState([]);
+  const [tables, setTables] = useState([
+    "logical_switches",
+    "logical_routers",
+    "chassis",
+    "logical_flows",
+  ]);
   const [selectedTable, setSelectedTable] = useState(null);
   const [tableData, setTableData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,12 +23,10 @@ export default function DatabaseStateView({ apiUrl }) {
   const fetchTables = async () => {
     setLoading(true);
     try {
-      const endpoint =
-        activeDb === "northbound" ? "/api/ovn/nb/tables" : "/api/ovn/sb/tables";
-      const response = await fetch(`${apiUrl}${endpoint}`);
-      if (response.ok) {
-        const data = await response.json();
-        setTables(data.tables || []);
+      if (activeDb === "northbound") {
+        setTables(["logical_switches", "logical_routers"]);
+      } else {
+        setTables(["chassis", "logical_flows"]);
       }
       setLoading(false);
     } catch (error) {
@@ -34,16 +37,19 @@ export default function DatabaseStateView({ apiUrl }) {
 
   const fetchTableData = async (tableName) => {
     try {
-      const endpoint =
-        activeDb === "northbound"
-          ? `/api/ovn/nb/table/${tableName}`
-          : `/api/ovn/sb/table/${tableName}`;
+      let endpoint = "";
+      if (tableName === "logical_switches") endpoint = "/api/v1/switches";
+      if (tableName === "logical_routers") endpoint = "/api/v1/routers";
+      if (tableName === "chassis") endpoint = "/api/v1/chassis";
+      if (tableName === "logical_flows") endpoint = "/api/v1/flows/logical";
+      if (!endpoint) return;
+
       const response = await fetch(`${apiUrl}${endpoint}`);
-      if (response.ok) {
-        const data = await response.json();
-        setTableData(data);
-        setSelectedTable(tableName);
-      }
+      if (!response.ok) return;
+      const data = await response.json();
+      const rows = mapTableRows(tableName, data);
+      setTableData({ rows });
+      setSelectedTable(tableName);
     } catch (error) {
       console.error("Failed to fetch table data:", error);
     }
@@ -208,7 +214,7 @@ export default function DatabaseStateView({ apiUrl }) {
                           </td>
                           <td className="py-3">
                             <div className="flex flex-wrap gap-1">
-                              {row.attributes.map((attr, i) => (
+                              {(row.attributes || []).map((attr, i) => (
                                 <span
                                   key={i}
                                   className="inline-flex items-center bg-white border border-gray-200 rounded-full px-2 py-0.5 text-xs text-gray-700"
@@ -250,3 +256,46 @@ const mockTableData = [
     attributes: ["ports: 2", "acls: 0", "qos_rules: 0"],
   },
 ];
+
+function mapTableRows(tableName, payload) {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  if (tableName === "logical_switches") {
+    return payload.map((row) => ({
+      uuid: row.uuid || "n/a",
+      name: row.name || "unnamed-switch",
+      attributes: [`ports: ${row.port_count ?? 0}`],
+    }));
+  }
+
+  if (tableName === "logical_routers") {
+    return payload.map((row) => ({
+      uuid: row.uuid || "n/a",
+      name: row.name || "unnamed-router",
+      attributes: [`ports: ${row.port_count ?? 0}`, `nat: ${row.nat_count ?? 0}`],
+    }));
+  }
+
+  if (tableName === "chassis") {
+    return payload.map((row) => ({
+      uuid: row.uuid || "n/a",
+      name: row.name || "unnamed-chassis",
+      attributes: [
+        `hostname: ${row.hostname || "n/a"}`,
+        `encaps: ${Array.isArray(row.encaps) ? row.encaps.length : 0}`,
+      ],
+    }));
+  }
+
+  return payload.map((row) => ({
+    uuid: row.uuid || "n/a",
+    name: row.stage_name || "logical_flow",
+    attributes: [
+      `table: ${row.table_id ?? 0}`,
+      `priority: ${row.priority ?? 0}`,
+      `origin: ${row.origin_type || "other"}`,
+    ],
+  }));
+}
