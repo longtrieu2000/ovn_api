@@ -14,10 +14,109 @@ import {
 } from "recharts";
 import { TrendingUp, Cpu, HardDrive, Activity } from "lucide-react";
 
+// Mock data generators with timeRange support
+function generateMockLatencyData(timeRange = "1h") {
+  const data = [];
+  const now = Date.now();
+
+  // Configure points and interval based on time range
+  let points, intervalMinutes;
+  switch (timeRange) {
+    case "5m":
+      points = 30;
+      intervalMinutes = 0.17; // 10 seconds
+      break;
+    case "15m":
+      points = 30;
+      intervalMinutes = 0.5; // 30 seconds
+      break;
+    case "1h":
+      points = 30;
+      intervalMinutes = 2; // 2 minutes
+      break;
+    case "6h":
+      points = 36;
+      intervalMinutes = 10; // 10 minutes
+      break;
+    case "24h":
+      points = 48;
+      intervalMinutes = 30; // 30 minutes
+      break;
+    default:
+      points = 30;
+      intervalMinutes = 2;
+  }
+
+  for (let i = points; i >= 0; i--) {
+    const timestamp = now - i * intervalMinutes * 60 * 1000;
+    data.push({
+      time: new Date(timestamp).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }),
+      nb_to_sb: Math.round(20 + Math.random() * 15),
+      sb_to_of: Math.round(15 + Math.random() * 12),
+    });
+  }
+  return data;
+}
+
+function generateMockCpuData(timeRange = "1h") {
+  const data = [];
+  const now = Date.now();
+
+  // Configure points and interval based on time range
+  let points, intervalMinutes;
+  switch (timeRange) {
+    case "5m":
+      points = 30;
+      intervalMinutes = 0.17; // 10 seconds
+      break;
+    case "15m":
+      points = 30;
+      intervalMinutes = 0.5; // 30 seconds
+      break;
+    case "1h":
+      points = 30;
+      intervalMinutes = 2; // 2 minutes
+      break;
+    case "6h":
+      points = 36;
+      intervalMinutes = 10; // 10 minutes
+      break;
+    case "24h":
+      points = 48;
+      intervalMinutes = 30; // 30 minutes
+      break;
+    default:
+      points = 30;
+      intervalMinutes = 2;
+  }
+
+  for (let i = points; i >= 0; i--) {
+    const timestamp = now - i * intervalMinutes * 60 * 1000;
+    data.push({
+      time: new Date(timestamp).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }),
+      northd: Math.round(15 + Math.random() * 15),
+      controller: Math.round(10 + Math.random() * 20),
+    });
+  }
+  return data;
+}
+
 export default function PerformanceMetrics({ apiUrl }) {
-  const [latencyData, setLatencyData] = useState([]);
-  const [cpuData, setCpuData] = useState([]);
   const [timeRange, setTimeRange] = useState("1h");
+  // Initialize with mock data based on default timeRange
+  const [latencyData, setLatencyData] = useState(() =>
+    generateMockLatencyData("1h"),
+  );
+  const [cpuData, setCpuData] = useState(() => generateMockCpuData("1h"));
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     fetchMetrics();
@@ -26,23 +125,43 @@ export default function PerformanceMetrics({ apiUrl }) {
   }, [apiUrl, timeRange]);
 
   const fetchMetrics = async () => {
+    setIsLoading(true);
     try {
       const response = await fetch(
         `${apiUrl}/api/metrics/history?range=${timeRange}`,
       );
       if (response.ok) {
         const data = await response.json();
-        setLatencyData(data.latency || generateMockLatencyData());
-        setCpuData(data.cpu || generateMockCpuData());
+        if (data.latency && data.latency.length > 0) {
+          setLatencyData(data.latency);
+        } else {
+          setLatencyData(generateMockLatencyData(timeRange));
+        }
+        if (data.cpu && data.cpu.length > 0) {
+          setCpuData(data.cpu);
+        } else {
+          setCpuData(generateMockCpuData(timeRange));
+        }
       } else {
-        setLatencyData(generateMockLatencyData());
-        setCpuData(generateMockCpuData());
+        // Generate mock data based on current timeRange
+        setLatencyData(generateMockLatencyData(timeRange));
+        setCpuData(generateMockCpuData(timeRange));
       }
     } catch (error) {
       console.error("Failed to fetch metrics:", error);
-      setLatencyData(generateMockLatencyData());
-      setCpuData(generateMockCpuData());
+      // Generate mock data based on current timeRange
+      setLatencyData(generateMockLatencyData(timeRange));
+      setCpuData(generateMockCpuData(timeRange));
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleTimeRangeChange = (range) => {
+    setTimeRange(range);
+    // Immediately update charts with new data for the selected range
+    setLatencyData(generateMockLatencyData(range));
+    setCpuData(generateMockCpuData(range));
   };
 
   return (
@@ -58,10 +177,10 @@ export default function PerformanceMetrics({ apiUrl }) {
           </p>
         </div>
         <div className="flex gap-2">
-          {["15m", "1h", "6h", "24h"].map((range) => (
+          {["5m", "15m", "1h", "6h", "24h"].map((range) => (
             <button
               key={range}
-              onClick={() => setTimeRange(range)}
+              onClick={() => handleTimeRangeChange(range)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 timeRange === range
                   ? "bg-blue-600 text-white"
@@ -106,7 +225,7 @@ export default function PerformanceMetrics({ apiUrl }) {
         />
       </div>
 
-      {/* Latency Chart */}
+      {/* Latency Chart - FIXED */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -128,55 +247,70 @@ export default function PerformanceMetrics({ apiUrl }) {
             </div>
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={latencyData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-            <XAxis
-              dataKey="time"
-              stroke="#6B7280"
-              style={{ fontSize: "12px" }}
-              tick={{ fill: "#6B7280" }}
-            />
-            <YAxis
-              stroke="#6B7280"
-              style={{ fontSize: "12px" }}
-              tick={{ fill: "#6B7280" }}
-              label={{
-                value: "Latency (ms)",
-                angle: -90,
-                position: "insideLeft",
-                style: { fontSize: "12px", fill: "#6B7280" },
-              }}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#FFFFFF",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                fontSize: "12px",
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="nb_to_sb"
-              stroke="#2563EB"
-              strokeWidth={2}
-              dot={false}
-              name="NB → SB"
-            />
-            <Line
-              type="monotone"
-              dataKey="sb_to_of"
-              stroke="#EA580C"
-              strokeWidth={2}
-              dot={false}
-              name="SB → OpenFlow"
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        {latencyData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart
+              data={latencyData}
+              margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis
+                dataKey="time"
+                stroke="#6B7280"
+                style={{ fontSize: "11px" }}
+                tick={{ fill: "#6B7280" }}
+                interval="preserveStartEnd"
+                minTickGap={50}
+              />
+              <YAxis
+                stroke="#6B7280"
+                style={{ fontSize: "11px" }}
+                tick={{ fill: "#6B7280" }}
+                domain={[0, 50]}
+                label={{
+                  value: "Latency (ms)",
+                  angle: -90,
+                  position: "insideLeft",
+                  style: { fontSize: "11px", fill: "#6B7280" },
+                }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#FFFFFF",
+                  border: "1px solid #E5E7EB",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  padding: "8px 12px",
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey="nb_to_sb"
+                stroke="#2563EB"
+                strokeWidth={2}
+                dot={false}
+                name="NB → SB"
+                isAnimationActive={true}
+              />
+              <Line
+                type="monotone"
+                dataKey="sb_to_of"
+                stroke="#EA580C"
+                strokeWidth={2}
+                dot={false}
+                name="SB → OpenFlow"
+                isAnimationActive={true}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[300px]">
+            <p className="text-sm text-gray-500">Loading chart data...</p>
+          </div>
+        )}
       </div>
 
-      {/* CPU Usage Chart */}
+      {/* CPU Usage Chart - FIXED */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -188,52 +322,67 @@ export default function PerformanceMetrics({ apiUrl }) {
             </p>
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={cpuData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-            <XAxis
-              dataKey="time"
-              stroke="#6B7280"
-              style={{ fontSize: "12px" }}
-              tick={{ fill: "#6B7280" }}
-            />
-            <YAxis
-              stroke="#6B7280"
-              style={{ fontSize: "12px" }}
-              tick={{ fill: "#6B7280" }}
-              label={{
-                value: "CPU %",
-                angle: -90,
-                position: "insideLeft",
-                style: { fontSize: "12px", fill: "#6B7280" },
-              }}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#FFFFFF",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
-                fontSize: "12px",
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="northd"
-              stroke="#2563EB"
-              fill="#EFF6FF"
-              strokeWidth={2}
-              name="northd"
-            />
-            <Area
-              type="monotone"
-              dataKey="controller"
-              stroke="#10B981"
-              fill="#D1FAE5"
-              strokeWidth={2}
-              name="controller"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {cpuData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart
+              data={cpuData}
+              margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis
+                dataKey="time"
+                stroke="#6B7280"
+                style={{ fontSize: "11px" }}
+                tick={{ fill: "#6B7280" }}
+                interval="preserveStartEnd"
+                minTickGap={50}
+              />
+              <YAxis
+                stroke="#6B7280"
+                style={{ fontSize: "11px" }}
+                tick={{ fill: "#6B7280" }}
+                domain={[0, 50]}
+                label={{
+                  value: "CPU %",
+                  angle: -90,
+                  position: "insideLeft",
+                  style: { fontSize: "11px", fill: "#6B7280" },
+                }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#FFFFFF",
+                  border: "1px solid #E5E7EB",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  padding: "8px 12px",
+                }}
+              />
+              <Area
+                type="monotone"
+                dataKey="northd"
+                stroke="#2563EB"
+                fill="#EFF6FF"
+                strokeWidth={2}
+                name="northd"
+                isAnimationActive={true}
+              />
+              <Area
+                type="monotone"
+                dataKey="controller"
+                stroke="#10B981"
+                fill="#D1FAE5"
+                strokeWidth={2}
+                name="controller"
+                isAnimationActive={true}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[300px]">
+            <p className="text-sm text-gray-500">Loading chart data...</p>
+          </div>
+        )}
       </div>
 
       {/* Performance Breakdown */}
@@ -323,37 +472,4 @@ function ResourceMetric({ label, metric, utilization }) {
       </div>
     </div>
   );
-}
-
-// Mock data generators
-function generateMockLatencyData() {
-  const data = [];
-  const now = Date.now();
-  for (let i = 20; i >= 0; i--) {
-    data.push({
-      time: new Date(now - i * 3 * 60 * 1000).toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      nb_to_sb: 20 + Math.random() * 15,
-      sb_to_of: 15 + Math.random() * 12,
-    });
-  }
-  return data;
-}
-
-function generateMockCpuData() {
-  const data = [];
-  const now = Date.now();
-  for (let i = 20; i >= 0; i--) {
-    data.push({
-      time: new Date(now - i * 3 * 60 * 1000).toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      northd: 15 + Math.random() * 15,
-      controller: 10 + Math.random() * 20,
-    });
-  }
-  return data;
 }

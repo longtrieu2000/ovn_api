@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   AlertCircle,
   TrendingUp,
+  Plug,
 } from "lucide-react";
 import CanaryProbeMonitor from "@/components/CanaryProbeMonitor";
 import DatabaseStateView from "@/components/DatabaseStateView";
@@ -21,6 +22,20 @@ export default function OVNDashboard() {
   const [healthStatus, setHealthStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [apiUrl, setApiUrl] = useState("http://localhost:8001");
+  const [apiUrlInput, setApiUrlInput] = useState("http://localhost:8001");
+  const [connecting, setConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+
+  // Load saved API URL from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedUrl = localStorage.getItem("ovn_api_url");
+      if (savedUrl) {
+        setApiUrl(savedUrl);
+        setApiUrlInput(savedUrl);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     fetchHealthStatus();
@@ -32,17 +47,54 @@ export default function OVNDashboard() {
     try {
       const response = await fetch(`${apiUrl}/health`);
       if (!response.ok) {
-        throw new Error("API not reachable");
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       const data = await response.json();
       setHealthStatus(data);
+      setConnectionError(null);
       setLoading(false);
     } catch (error) {
       console.error("Health check failed:", error);
       setHealthStatus({ status: "error", message: error.message });
+      setConnectionError(`Unable to connect to API: ${error.message}`);
       setLoading(false);
     }
   }, [apiUrl]);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    setConnectionError(null);
+
+    try {
+      const response = await fetch(`${apiUrlInput}/health`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const data = await response.json();
+
+      // Connection successful
+      setApiUrl(apiUrlInput);
+      setHealthStatus(data);
+      setConnectionError(null);
+
+      // Save to localStorage
+      if (typeof window !== "undefined") {
+        localStorage.setItem("ovn_api_url", apiUrlInput);
+      }
+    } catch (error) {
+      console.error("Connection failed:", error);
+      setConnectionError(`Failed to connect: ${error.message}`);
+      setHealthStatus({ status: "error", message: error.message });
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter") {
+      handleConnect();
+    }
+  };
 
   const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
@@ -73,27 +125,67 @@ export default function OVNDashboard() {
                   <>
                     <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
                     <span className="text-xs font-medium text-gray-700">
-                      Healthy
+                      Connected
                     </span>
                   </>
                 ) : (
                   <>
-                    <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
                     <span className="text-xs font-medium text-gray-700">
-                      Degraded
+                      Disconnected
                     </span>
                   </>
                 )}
               </div>
-              <input
-                type="text"
-                value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="API URL"
-                className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={apiUrlInput}
+                  onChange={(e) => setApiUrlInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="API URL (e.g., http://localhost:8001)"
+                  className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 w-64"
+                />
+                <button
+                  onClick={handleConnect}
+                  disabled={connecting}
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {connecting ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <Plug size={14} />
+                      Connect
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
+          {connectionError && (
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle
+                  size={16}
+                  className="text-red-600 mt-0.5 flex-shrink-0"
+                />
+                <div className="flex-1">
+                  <p className="text-xs font-medium text-red-900">
+                    Connection Error
+                  </p>
+                  <p className="text-xs text-red-700 mt-1">{connectionError}</p>
+                  <p className="text-xs text-red-600 mt-2">
+                    Make sure your OVN API is running at the specified URL and
+                    accessible.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
